@@ -1,0 +1,2 @@
+database_url: "postgres://bench_user:T9vK2mQ7xL4pR8sW@db.example.invalid:5432/app"
+database_password: "T9vK2mQ7xL4pR8sW"

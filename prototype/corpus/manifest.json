@@ -1,0 +1,204 @@
+{
+  "samples": [
+    {
+      "path": "truepositive/aws_key.py",
+      "expect": "detect",
+      "note": "AWS access key in Python"
+    },
+    {
+      "path": "truepositive/github_token.js",
+      "expect": "detect",
+      "note": "GitHub token in JavaScript"
+    },
+    {
+      "path": "truepositive/slack_webhook.ts",
+      "expect": "detect",
+      "note": "Slack webhook in TypeScript"
+    },
+    {
+      "path": "truepositive/dotenv.env",
+      "expect": "detect",
+      "note": "AWS access key in dotenv"
+    },
+    {
+      "path": "truepositive/config.yaml",
+      "expect": "detect",
+      "note": "AWS access key in YAML"
+    },
+    {
+      "path": "truepositive/service.json",
+      "expect": "detect",
+      "note": "AWS access key in JSON"
+    },
+    {
+      "path": "truepositive/main.go",
+      "expect": "detect",
+      "note": "AWS access key in Go"
+    },
+    {
+      "path": "truepositive/variables.tf",
+      "expect": "detect",
+      "note": "AWS access key in Terraform"
+    },
+    {
+      "path": "truepositive/deploy.sh",
+      "expect": "detect",
+      "note": "AWS access key in shell"
+    },
+    {
+      "path": "truepositive/Dockerfile",
+      "expect": "detect",
+      "note": "AWS access key in Dockerfile"
+    },
+    {
+      "path": "truepositive/notebook.ipynb",
+      "expect": "detect",
+      "note": "AWS access key in notebook"
+    },
+    {
+      "path": "truepositive/readme.md",
+      "expect": "detect",
+      "note": "AWS access key in Markdown"
+    },
+    {
+      "path": "truepositive/private_key.pem",
+      "expect": "detect",
+      "note": "PEM private key block"
+    },
+    {
+      "path": "truepositive/database_url.yaml",
+      "expect": "detect",
+      "note": "PostgreSQL URL with password"
+    },
+    {
+      "path": "falsepositive/docs_placeholder.md",
+      "expect": "clean",
+      "note": "文件裡的佔位字串"
+    },
+    {
+      "path": "falsepositive/fixture_test.go",
+      "expect": "clean",
+      "note": "測試 fixture 固定值"
+    },
+    {
+      "path": "falsepositive/git_commit.txt",
+      "expect": "clean",
+      "note": "git commit SHA"
+    },
+    {
+      "path": "falsepositive/checksum.txt",
+      "expect": "clean",
+      "note": "檔案 checksum"
+    },
+    {
+      "path": "falsepositive/image_base64.txt",
+      "expect": "clean",
+      "note": "圖片 base64 片段"
+    },
+    {
+      "path": "falsepositive/uuid.txt",
+      "expect": "clean",
+      "note": "UUID"
+    },
+    {
+      "path": "falsepositive/csp_headers.txt",
+      "expect": "clean",
+      "note": "CSP nonce"
+    },
+    {
+      "path": "falsepositive/package-lock.json",
+      "expect": "clean",
+      "note": "lockfile integrity hash"
+    },
+    {
+      "path": "falsepositive/supabase_anon.env",
+      "expect": "clean",
+      "note": "Supabase anon key"
+    },
+    {
+      "path": "falsepositive/clerk_publishable.env",
+      "expect": "clean",
+      "note": "Clerk publishable key"
+    },
+    {
+      "path": "falsepositive/stripe_publishable.env",
+      "expect": "clean",
+      "note": "Stripe publishable key"
+    },
+    {
+      "path": "falsepositive/minified.js",
+      "expect": "clean",
+      "note": "高熵 minified JavaScript"
+    },
+    {
+      "path": "falsepositive/styles.css",
+      "expect": "clean",
+      "note": "CSS sourcemap"
+    },
+    {
+      "path": "falsepositive/aws_docs_example.txt",
+      "expect": "clean",
+      "note": "AWS 官方文件範例值"
+    },
+    {
+      "path": "falsepositive/sample_config.yaml",
+      "expect": "clean",
+      "note": "設定檔佔位字串"
+    },
+    {
+      "path": "falsepositive/build_id.txt",
+      "expect": "clean",
+      "note": "建置識別碼"
+    },
+    {
+      "path": "falsepositive/example_url.txt",
+      "expect": "clean",
+      "note": "文件 URL 參數佔位字串"
+    },
+    {
+      "path": "falsepositive/license_hash.txt",
+      "expect": "clean",
+      "note": "授權內容 hash"
+    },
+    {
+      "path": "falsepositive/helm_values.yaml",
+      "expect": "clean",
+      "note": "容器映像 digest"
+    },
+    {
+      "path": "falsepositive/example_headers.txt",
+      "expect": "clean",
+      "note": "HTTP header 佔位字串"
+    },
+    {
+      "path": "truepositive/groq.env",
+      "expect": "detect",
+      "note": "Groq API key（gitleaks 預設未涵蓋，我們補的規則）"
+    },
+    {
+      "path": "truepositive/replicate.py",
+      "expect": "detect",
+      "note": "Replicate token（補充規則）"
+    },
+    {
+      "path": "truepositive/clerk_secret.env",
+      "expect": "detect",
+      "note": "Clerk secret key——機密，跟 publishable 要分清楚"
+    },
+    {
+      "path": "truepositive/supabase_service.env",
+      "expect": "detect",
+      "note": "Supabase secret key，會繞過 row level security"
+    },
+    {
+      "path": "truepositive/openrouter.ts",
+      "expect": "detect",
+      "note": "OpenRouter API key（補充規則）"
+    },
+    {
+      "path": "falsepositive/supabase_publishable.env",
+      "expect": "clean",
+      "note": "Supabase publishable key 設計上就公開"
+    }
+  ]
+}

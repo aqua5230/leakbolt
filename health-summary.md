@@ -1,0 +1,76 @@
+# LeakBolt 專案體檢（2026-08-29，Claude 整合）
+
+來源：Claude 親測 + health-codex.md（程式碼一致性）+ health-agy.md（檔案實體盤點）。
+凡標「已驗證」者為 Claude 本人跑過或讀過原始碼確認。
+
+## 一、綠燈（已驗證）
+
+- `go build ./...` / `go vet ./...` / `go test ./...` 於 macOS 全部 exit 0，測試 `ok leakbolt 1.418s`
+- Windows 交叉編譯：`GOOS=windows GOARCH=amd64` 與 `GOOS=windows GOARCH=arm64` 各自 vet + build 皆乾淨
+- `dist/` binary 架構正確：amd64 為 `PE32+ executable (console) x86-64`，arm64 為 `PE32+ executable (console) Aarch64`
+- binary 打包來源（`go version -m`）：兩支皆 `go1.27.0`、`CGO_ENABLED=0`、
+  `GOOS=windows`、`GOARCH=amd64` / `arm64`，toolchain 與現在本機相同；
+  打包時間 20:56、原始碼最後修改 20:55。時間與 toolchain 都相符，但沒有 build script
+  留下記錄，無法百分之百證明就是這份原始碼編的。
+- `sh scripts/quality_gate.sh` 通過：真陽性 19、假陰性 0、真陰性 21、假陽性 0，漏報率 0%、誤報率 0%
+- 無殘留垃圾檔（無 .DS_Store、無備份檔、無空目錄）
+- scripts/ 四支 .sh 皆有執行權限與正確 shebang；windows_matrix.ps1 已內建 Git Bash 三處候選路徑偵測
+
+## 二、真問題
+
+### 1. core.hooksPath 沒查 system 層（已讀原始碼確認）
+
+三處迴圈都只跑 `{"local", "global"}`，沒有 `system`：
+- prototype/hooks.go:67（installHook 的佔用偵測）
+- prototype/hooks.go:253（effectiveHookPath）
+- prototype/doctor.go:58（doctor 輸出）
+
+後果：若使用者的系統層 git 設定有 core.hooksPath，install 會寫進 `<repo>/.git/hooks/pre-commit`
+並回報成功，doctor 也顯示正常，但 git 實際會去系統設定指的目錄找 hook —— hook 不會被執行。
+這正是 PLAN.md:86 承諾要抓的情境。
+
+註：程式面（三處迴圈缺 system）由 Claude 讀原始碼確認；git 會依 local > global > system
+的順序採用 core.hooksPath 則是 git 官方記載的行為。兩者合起來即為完整結論。
+Windows 特別要留意——Git for Windows 自帶一份 system 層 gitconfig，這個缺口在
+Windows 上最容易真的踩到，測試時值得專門試一次。
+
+### 2. quality_gate.sh 永遠偵測不到規則分岔（已讀原始碼確認）
+
+scripts/quality_gate.sh:21-25 的順序是先 `cp` 再 `cmp`：
+
+```sh
+cp rules/leakbolt.toml cmd/corpusbench/rules/leakbolt.toml
+if ! cmp -s rules/leakbolt.toml cmd/corpusbench/rules/leakbolt.toml; then
+	echo "quality gate 失敗：補充規則同步失敗" >&2
+```
+
+`cmp` 在 `cp` 之後跑，只有 `cp` 本身失敗才會不一致。腳本註解寫的是「兩份分岔的話，
+量到的就不是產品實際行為」，但這段程式碼偵測不到分岔——它是把分岔直接覆蓋掉。
+PLAN.md 把誤報率列為一票否決，而唯一量誤報的關卡永遠不會回報規則漂移。
+
+### 3. 補充規則寫暫存檔失敗會無聲降級（已讀原始碼確認）
+
+prototype/rules.go:19-32 的 `writeSupplementaryRules` 在 MkdirTemp 或 WriteFile 失敗時
+回傳 `ok=false`；prototype/scan.go:46-49 是 `if configPath, cleanup, ok := writeSupplementaryRules(); ok`，
+不 ok 就直接不帶 `--config` 跑 gitleaks。註解明寫「寫失敗不算致命」——設計是刻意的，
+問題在於完全沒有訊息告訴使用者這次掃描少了自帶規則。
+
+### 4. gitleaks 版本沒鎖（已讀原始碼確認）
+
+PLAN.md:81、329 要求鎖 v8.30.1；prototype/scan.go:40 只有 `exec.LookPath("gitleaks")`，
+找到就用，沒有讀版本也沒有比對。本機剛好是 8.30.1，別台機器可能不是。
+
+## 三、次要
+
+- prototype/implementation-notes.md:11-13 的 Deviation 說要 `GO111MODULE=off` 才過 —— 已過期，
+  現在無環境變數直接跑就通過。文件該更新。
+- 誤報語料庫只由 `scripts/quality_gate.sh` + `go run ./cmd/corpusbench` 驅動，
+  `go test ./...` 不會碰它（corpusbench 是 main 套件，`[no test files]`）。
+- 本次體檢跑 `sh scripts/quality_gate.sh` 時，該腳本的 `cp` 動作改寫了
+  prototype/cmd/corpusbench/rules/leakbolt.toml（時間戳變成 22:08）。內容與
+  prototype/rules/leakbolt.toml 相同，等於沒有實質變更，但檔案確實被動到了。
+- PLAN.md:221-224 寫的 pre-push 與 CI 同一掃描指令尚未實作；CLI 目前只有
+  install / scan / allow / untrack / doctor / purge-backups。
+- dist/ 只有 Windows binary，沒有 macOS 與 Linux 產出物。
+- 專案不是 git repo（`fatal: not a git repository`）。PLAN.md 22KB、20 份 research、
+  整個 prototype 都沒版本控制。

@@ -1,0 +1,1 @@
+Content-Security-Policy: script-src 'self' 'nonce-7YJg8QdV3lT4mK2p'; object-src 'none'

@@ -1,0 +1,97 @@
+# LeakBolt 補充規則（疊在 gitleaks v8.30.1 預設規則之上）
+#
+# 兩個設計原則：
+# 1. 新增偵測規則保守——只收官方文件有明確前綴的，寧可漏一點也不要誤報。
+#    誤報率在 PLAN.md 的判準表是一票否決。
+# 2. 公開金鑰的排除積極——有些金鑰設計上就是給前端用的，抓它們是純誤報。
+#
+# 來源見 research/20-補充規則盤點.md，每條都有官方文件 URL。
+
+title = "LeakBolt supplementary rules"
+
+[extend]
+useDefault = true
+
+# ---------- 未被 gitleaks 涵蓋、官方有公開格式的供應商 ----------
+
+[[rules]]
+id = "leakbolt-groq-api-key"
+description = "Groq API key"
+regex = '''\bgsk_[A-Za-z0-9]{52}\b'''
+keywords = ["gsk_"]
+
+[[rules]]
+id = "leakbolt-replicate-token"
+description = "Replicate API token"
+regex = '''\br8_[A-Za-z0-9]{37}\b'''
+keywords = ["r8_"]
+
+[[rules]]
+id = "leakbolt-openrouter-key"
+description = "OpenRouter API key"
+regex = '''\bsk-or-v1-[a-f0-9]{64}\b'''
+keywords = ["sk-or-v1-"]
+
+[[rules]]
+id = "leakbolt-xai-key"
+description = "xAI (Grok) API key"
+regex = '''\bxai-[A-Za-z0-9]{40,}\b'''
+keywords = ["xai-"]
+
+[[rules]]
+id = "leakbolt-fireworks-key"
+description = "Fireworks AI API key"
+regex = '''\bfw_[A-Za-z0-9]{24,}\b'''
+keywords = ["fw_"]
+
+[[rules]]
+id = "leakbolt-deepseek-key"
+description = "DeepSeek API key"
+regex = '''\bsk-[a-f0-9]{32}\b'''
+keywords = ["sk-"]
+
+# Supabase：只抓機密那幾種，公開的在下面 allowlist 排除
+[[rules]]
+id = "leakbolt-supabase-secret-key"
+description = "Supabase secret key (bypasses row level security)"
+regex = '''\bsb_secret_[A-Za-z0-9_-]{20,}\b'''
+keywords = ["sb_secret_"]
+
+[[rules]]
+id = "leakbolt-supabase-pat"
+description = "Supabase personal access token"
+regex = '''\bsbp_[a-f0-9]{40}\b'''
+keywords = ["sbp_"]
+
+# Clerk：secret key 才是機密，publishable key 是公開的
+[[rules]]
+id = "leakbolt-clerk-secret-key"
+description = "Clerk backend secret key"
+regex = '''\bsk_(?:test|live)_[A-Za-z0-9]{20,}\b'''
+keywords = ["sk_test_", "sk_live_"]
+
+# ---------- 全域排除：設計上就公開的金鑰 ----------
+#
+# 抓這些是純誤報。我們的主力客群（Supabase／Clerk／Stripe 的使用者）
+# 每個專案都會有這些字串，一抓就是誤報疲勞。
+
+[[allowlists]]
+description = "設計上就公開的金鑰：前端載入用，不是機密"
+regexes = [
+  # Clerk publishable key（前端載入 Clerk 實例用）
+  '''\bpk_(?:test|live)_[A-Za-z0-9$/+=_-]{20,}''',
+  # Stripe publishable key（前端 checkout 用）
+  '''\bpk_(?:test|live)_[A-Za-z0-9]{20,}''',
+  # Supabase publishable key（新版，取代 anon key）
+  '''\bsb_publishable_[A-Za-z0-9_-]{20,}''',
+]
+
+[[allowlists]]
+description = "Supabase anon key：受 row level security 保護，官方預期它出現在前端"
+# 只在變數名稱明確寫著 anon 或 publishable 時才排除。
+# 不排除只寫 NEXT_PUBLIC_ 的情況——把 service_role key 放進 NEXT_PUBLIC_ 變數
+# 本身就是一種真實且嚴重的洩漏，那個必須照抓。
+regexTarget = "line"
+regexes = [
+  '''(?i)(?:anon[_-]?key|publishable[_-]?key)\s*[:=]''',
+]

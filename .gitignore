@@ -1,0 +1,6 @@
+# 建置產出物（9.5MB，不進版控；用 scripts 重新編譯即可）
+dist/
+
+# Go
+*.exe
+coverage.out
