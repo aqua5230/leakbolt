@@ -78,3 +78,34 @@ PLAN.md:81、329 要求鎖 v8.30.1；prototype/scan.go:40 只有 `exec.LookPath(
 - dist/ 只有 Windows binary，沒有 macOS 與 Linux 產出物。
 - 專案不是 git repo（`fatal: not a git repository`）。PLAN.md 22KB、20 份 research、
   整個 prototype 都沒版本控制。
+
+---
+
+## 四、2026-08-29 實機試用時新發現的問題
+
+### hook 在 leakbolt 不在 PATH 上時無聲放行
+
+`prototype/hooks.go` 寫進去的 pre-commit 內容是：
+
+```sh
+#!/bin/sh
+# Added by LeakBolt
+if command -v leakbolt >/dev/null 2>&1; then
+  leakbolt scan --staged || exit 1
+fi
+```
+
+`command -v leakbolt` 找不到執行檔時，整個 if 區塊跳過，hook 回 exit 0，commit 照常通過。
+實測：把 leakbolt 放在 PATH 外，帶著 `AWS_ACCESS_KEY_ID = "AKIAIMNOJVGFDXXXE4OA"` 的檔案
+commit 成功、完全沒有任何訊息；同一個檔案手動跑 `leakbolt scan --staged` 抓得到（exit 1）。
+
+`leakbolt doctor` 也不會抓到這件事——它的「hook 守衛」只檢查 hook 檔案內容有沒有包含
+`leakbolt scan --staged` 字串，不檢查 leakbolt 本身找不找得到。
+
+這個 `command -v` 保護傘應該是為了讓沒裝 leakbolt 的隊友照樣能 commit（hook 設定
+可能進版控，例如 husky 或 lefthook 的設定檔）。但對 `.git/hooks/pre-commit` 這種
+只在本機生效、不進版控的情況，跑過 install 的人本來就有 leakbolt，之後找不到就是異常，
+無聲放行等於 DECISION.md 三件不能忍第 2 條的「錯誤的安全感」。
+
+尚未修，待決定：至少 doctor 要能抓到；hook 本身要不要在找不到時改成擋下來（會影響隊友）
+是產品決定。
