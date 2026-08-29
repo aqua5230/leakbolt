@@ -234,6 +234,27 @@ func TestDoctorReportsUnrecordedSystemHooksPathForOldState(t *testing.T) {
 	}
 }
 
+func TestDoctorReportsLeakboltDisabled(t *testing.T) {
+	repo := testGitRepo(t)
+	t.Setenv("GIT_CONFIG_SYSTEM", filepath.Join(t.TempDir(), "system.gitconfig"))
+	t.Setenv("GIT_CONFIG_GLOBAL", filepath.Join(t.TempDir(), "global.gitconfig"))
+	if err := writeScriptHook(filepath.Join(repo, ".git", "hooks", "pre-commit"), false); err != nil {
+		t.Fatal(err)
+	}
+	if err := recordInstallation(repo, "script"); err != nil {
+		t.Fatal(err)
+	}
+	mustRunGit(t, repo, "config", "hooks.leakbolt", "false")
+
+	var output bytes.Buffer
+	if code := runDoctor(repo, &output); code != 1 {
+		t.Fatalf("doctor exit = %d, output=%s", code, output.String())
+	}
+	if !strings.Contains(output.String(), "LeakBolt 啟用狀態：異常") {
+		t.Fatalf("doctor 未回報 LeakBolt 停用：%s", output.String())
+	}
+}
+
 func testRepo(t *testing.T) string {
 	t.Helper()
 	repo := t.TempDir()

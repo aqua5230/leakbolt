@@ -10,15 +10,19 @@ import (
 )
 
 func hookGuard(versionControlled bool) string {
-	guard := "if command -v leakbolt >/dev/null 2>&1; then\n" +
+	guard := "if [ \"$(git config --bool --get hooks.leakbolt)\" = \"false\" ]; then\n" +
+		"  echo \"LeakBolt：已由 git config hooks.leakbolt false 停用，這次 commit 未檢查密鑰。\" >&2\n" +
+		"elif command -v leakbolt >/dev/null 2>&1; then\n" +
 		"  leakbolt scan --staged || exit 1\n"
 	if versionControlled {
 		return guard +
 			"elif [ -f \"$(git rev-parse --git-common-dir)/leakbolt/state.json\" ]; then\n" +
 			"  echo \"LeakBolt：找不到 leakbolt 執行檔，commit 已中止。\" >&2\n" +
 			"  echo \"  這台機器裝過 LeakBolt，但現在 PATH 上找不到它。\" >&2\n" +
+			"  echo \"  PATH=$PATH\" >&2\n" +
 			"  echo \"  把 leakbolt 放回 PATH，或移除專案 hook 設定裡的 LeakBolt 區塊來停用檢查。\" >&2\n" +
 			"  echo \"  這次要跳過檢查：git commit --no-verify\" >&2\n" +
+			"  echo \"  永久停用 LeakBolt：git config hooks.leakbolt false\" >&2\n" +
 			"  exit 1\n" +
 			"fi\n"
 	}
@@ -26,8 +30,10 @@ func hookGuard(versionControlled bool) string {
 		"else\n" +
 		"  echo \"LeakBolt：找不到 leakbolt 執行檔，commit 已中止。\" >&2\n" +
 		"  echo \"  這個 repo 裝過 LeakBolt，但現在 PATH 上找不到它。\" >&2\n" +
+		"  echo \"  PATH=$PATH\" >&2\n" +
 		"  echo \"  把 leakbolt 放回 PATH，或刪掉 .git/hooks/pre-commit 停用檢查。\" >&2\n" +
 		"  echo \"  這次要跳過檢查：git commit --no-verify\" >&2\n" +
+		"  echo \"  永久停用 LeakBolt：git config hooks.leakbolt false\" >&2\n" +
 		"  exit 1\n" +
 		"fi\n"
 }

@@ -121,3 +121,30 @@ commit 成功、完全沒有任何訊息；同一個檔案手動跑 `leakbolt sc
 
 實機驗過四種情況：leakbolt 不在 PATH → 擋且訊息清楚；`--no-verify` → 放行；
 leakbolt 在 PATH ＋ 有密鑰 → 正常擋下並給指紋；leakbolt 在 PATH ＋ 乾淨檔案 → 通過。
+
+
+---
+
+## 五、2026-08-29 依業界慣例補上的兩件事
+
+查證過程與對照結論見 `research/24-對照結論-缺工具處理.md`，實作細節見 `fix-report-3.md`。
+
+1. **停用開關 `git config hooks.leakbolt false`**（抄 gitleaks 的 `hooks.gitleaks`）。
+   原因：`git commit --no-verify` 會關掉所有 hook，使用者同時有 lint 與測試時代價太大。
+   停用檢查排在「找不到執行檔」檢查**前面**——停用之後就算執行檔被刪掉也不該報錯。
+   停用中每次 commit 都印一行提醒，`doctor` 報 `LeakBolt 啟用狀態：異常` 並給恢復指令。
+2. **找不到執行檔的訊息印出 `PATH=$PATH`**（抄 husky 的
+   `command not found in PATH=$PATH`），方便診斷 GUI git 工具 PATH 不同的情況。
+
+實機驗過：預設啟用＋有密鑰 → 擋；停用後 → 放行並印提醒；停用＋執行檔不在 PATH → 一樣放行
+（不會誤報找不到）；doctor 停用時 exit 1、恢復後 exit 0。
+變異測試：把停用檢查搬到執行檔檢查後面，`TestUnversionedHookAllowsDisabledLeakboltWhenBinaryMissing` FAIL。
+
+## 六、尚未處理，留給之後
+
+`gitleaks --help`（8.30.1）列出的指令只有 `git` / `dir` / `stdin`，
+**`protect` 與 `detect` 已從說明中隱藏**（仍能執行，實測輸出與新指令一致）。
+LeakBolt 三處在用：`prototype/scan.go` 的 `scanStaged`（`protect --staged`）、
+`scanHistory`（`detect`）、`prototype/cmd/corpusbench/main.go` 的 `scanFile`
+（`detect --no-git --source`）。鎖版 8.30.1 期間不影響，升版前要換成
+`gitleaks git --pre-commit --staged` 這類新寫法。詳見 `research/24` 第五節。

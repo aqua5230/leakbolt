@@ -120,6 +120,19 @@ func runDoctor(repo string, stdout io.Writer) int {
 		ok = false
 	}
 
+	leakboltEnabled, _, configErr := gitConfigBool(repo, "hooks.leakbolt")
+	switch {
+	case configErr != nil:
+		fmt.Fprintf(stdout, "LeakBolt 啟用狀態：異常（%v）\n", configErr)
+		ok = false
+	case leakboltEnabled == "false":
+		fmt.Fprintln(stdout, "LeakBolt 啟用狀態：異常（已由 git config hooks.leakbolt false 停用，commit 不會被檢查）")
+		fmt.Fprintln(stdout, "  要恢復檢查：git config --unset hooks.leakbolt")
+		ok = false
+	default:
+		fmt.Fprintln(stdout, "LeakBolt 啟用狀態：正常")
+	}
+
 	if path, pathErr := exec.LookPath("leakbolt"); pathErr == nil {
 		fmt.Fprintf(stdout, "leakbolt 執行檔：正常（%s）\n", path)
 	} else {

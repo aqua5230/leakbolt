@@ -33,6 +33,21 @@ func gitConfig(repo, scope string) (string, bool, error) {
 	return "", false, fmt.Errorf("讀取 git config --%s core.hooksPath 失敗：%s", scope, strings.TrimSpace(stderr.String()))
 }
 
+func gitConfigBool(repo, key string) (string, bool, error) {
+	cmd := exec.Command("git", "config", "--bool", "--get", key)
+	cmd.Dir = repo
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	output, err := cmd.Output()
+	if err == nil {
+		return strings.TrimSpace(string(output)), true, nil
+	}
+	if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
+		return "", false, nil
+	}
+	return "", false, fmt.Errorf("讀取 git config --bool --get %s 失敗：%s", key, strings.TrimSpace(stderr.String()))
+}
+
 // gitCommonDir 回傳這個 repo 共用的 git 目錄。
 //
 // 不可以自己把路徑拼成 <repo>/.git —— 在 git worktree 裡 .git 是一個檔案而不是目錄，

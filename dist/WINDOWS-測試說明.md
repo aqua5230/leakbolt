@@ -126,6 +126,34 @@ commit 要失敗。如果 commit 成功了，代表這個修復在 Windows 上�
 AWS_ACCESS_KEY_ID = "AKIAIMNOJVGFDXXXE4OA"
 ```
 
+**情境 F：停用開關**
+
+這版新增 `git config hooks.leakbolt false`，用來只關掉 LeakBolt 而不影響其他 hook
+（`git commit --no-verify` 會把所有 hook 一起關掉）。
+
+驗證：
+
+```
+git config hooks.leakbolt false
+```
+
+之後每次 commit 都應該印一行：
+
+```
+LeakBolt：已由 git config hooks.leakbolt false 停用，這次 commit 未檢查密鑰。
+```
+
+而且帶密鑰的 commit 會通過（這是刻意的，你自己關掉的）。
+`leakbolt doctor` 這時要報 `LeakBolt 啟用狀態：異常` 並回 exit 1。
+
+恢復：
+
+```
+git config --unset hooks.leakbolt
+```
+
+這個設定只寫進**這個 repo** 的 `.git/config`，不會影響其他專案，也不會進版控。
+
 **新增的警告訊息**
 
 這版起，gitleaks 版本不是 8.30.1 時，每次掃描都會在 stderr 印一行：
@@ -154,11 +182,11 @@ certutil -hashfile dist\leakbolt-windows-amd64.exe SHA256
 certutil -hashfile dist\leakbolt-windows-arm64.exe SHA256
 ```
 
-2026-08-29 22:42 修復後打包的版本應該是：
+2026-08-29 23:20 打包的版本應該是：
 
 ```
-amd64  5781c6742d3a0081e7d9b557959d67fe4b70667aad8a547b067e64bd488b28c4
-arm64  23a43577ccc2115c7e6731e26534f3a16f30d0be0c4a8e19eb0693774ab0e16f
+amd64  933f58718dcb1830a0825ee07408b03d55f5d97e8421417b3d23d7317474c8c4
+arm64  0b093c6084b0a3b1585eee7053b2503df7925cf7e17825dfefaf7399673c2354
 ```
 
 （雜湊每次重新打包都會變。以本檔記錄的時間為準，對不上就是拿到舊的。）

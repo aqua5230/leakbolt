@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"os"
 	"os/exec"
@@ -62,6 +63,9 @@ func TestAppendScriptHookIsIdempotent(t *testing.T) {
 	if string(content) != "#!/bin/sh\n# Added by LeakBolt\n"+hookGuard(false) {
 		t.Fatalf("unexpected hook:\n%s", content)
 	}
+	if !bytes.Contains(content, []byte("PATH=$PATH")) {
+		t.Fatalf("hook 裡的 PATH 必須保留成 shell 字面內容：\n%s", content)
+	}
 }
 
 func TestAppendLefthookAddsToPreCommitBlock(t *testing.T) {
@@ -78,6 +82,9 @@ func TestAppendLefthookAddsToPreCommitBlock(t *testing.T) {
 	if string(content) != want {
 		t.Fatalf("unexpected lefthook config:\n%s", content)
 	}
+	if !bytes.Contains(content, []byte("PATH=$PATH")) {
+		t.Fatalf("lefthook 裡的 PATH 必須保留成 shell 字面內容：\n%s", content)
+	}
 }
 
 func TestAppendPreCommitConfigExpandsEmptyRepos(t *testing.T) {
@@ -92,13 +99,15 @@ func TestAppendPreCommitConfigExpandsEmptyRepos(t *testing.T) {
 	}
 	if string(content[:len("repos:\n")]) != "repos:\n" ||
 		!containsGuard(string(content)) ||
-		!strings.Contains(string(content), "git rev-parse --git-common-dir") {
+		!strings.Contains(string(content), "git rev-parse --git-common-dir") ||
+		!strings.Contains(string(content), "PATH=$PATH") {
 		t.Fatalf("unexpected pre-commit config:\n%s", content)
 	}
 }
 
 func containsGuard(content string) bool {
-	return strings.Contains(content, "if command -v leakbolt >/dev/null 2>&1; then") &&
+	return strings.Contains(content, "git config --bool --get hooks.leakbolt") &&
+		strings.Contains(content, "elif command -v leakbolt >/dev/null 2>&1; then") &&
 		strings.Contains(content, "leakbolt scan --staged || exit 1")
 }
 
@@ -216,7 +225,7 @@ func TestScriptHookDoesNotKillOtherChecks(t *testing.T) {
 	if strings.Contains(got, "|| exit 0") {
 		t.Errorf("守衛不可用 || exit 0（會結束整個腳本），實際：%q", got)
 	}
-	if !strings.Contains(got, "if command -v leakbolt") {
+	if !strings.Contains(got, "elif command -v leakbolt") {
 		t.Errorf("守衛應為 if 區塊，實際：%q", got)
 	}
 	if !strings.Contains(got, "npm test") {
@@ -226,6 +235,71 @@ func TestScriptHookDoesNotKillOtherChecks(t *testing.T) {
 
 func TestUnversionedHookBlocksWhenLeakboltMissing(t *testing.T) {
 	repo := testGitRepo(t)
+	mustRunGit(t, repo, "config", "hooks.leakbolt", "true")
+	t.Setenv("PATH", "/usr/bin:/bin")
+	path := filepath.Join(repo, ".git", "hooks", "pre-commit")
+	if err := writeHookTarget(hookTarget{Path: path, Kind: "script"}); err != nil {
+		t.Fatal(err)
+	}
+	stderr, err := runHookWithSh(repo, path)
+	if err == nil {
+		t.Fatal("leakbolt 不在 PATH 時，不進版控的 hook 應失敗")
+	}
+	if !strings.Contains(stderr, "commit 已中止") {
+		t.Fatalf("stderr 未含中止訊息：%q", stderr)
+	}
+}
+
+func TestUnversionedHookAllowsDisabledLeakboltWhenBinaryMissing(t *testing.T) {
+	repo := testGitRepo(t)
+	mustRunGit(t, repo, "config", "hooks.leakbolt", "false")
+	t.Setenv("PATH", "/usr/bin:/bin")
+	path := filepath.Join(repo, ".git", "hooks", "pre-commit")
+	if err := writeHookTarget(hookTarget{Path: path, Kind: "script"}); err != nil {
+		t.Fatal(err)
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	disabledAt := bytes.Index(content, []byte("git config --bool --get hooks.leakbolt"))
+	binaryCheckAt := bytes.Index(content, []byte("command -v leakbolt"))
+	if disabledAt < 0 || binaryCheckAt < 0 || disabledAt > binaryCheckAt {
+		t.Fatalf("停用檢查必須排在執行檔檢查前面：\n%s", content)
+	}
+
+	stderr, err := runHookWithSh(repo, path)
+	if err != nil {
+		t.Fatalf("停用時，不進版控的 hook 應放行：%v, stderr=%q", err, stderr)
+	}
+	if !strings.Contains(stderr, "已由 git config hooks.leakbolt false 停用") {
+		t.Fatalf("stderr 未含停用訊息：%q", stderr)
+	}
+}
+
+func TestVersionControlledHookAllowsDisabledLeakboltWhenBinaryMissing(t *testing.T) {
+	repo := testGitRepo(t)
+	mustRunGit(t, repo, "config", "hooks.leakbolt", "false")
+	t.Setenv("PATH", "/usr/bin:/bin")
+	path := filepath.Join(repo, ".husky", "pre-commit")
+	if err := writeHookTarget(hookTarget{Path: path, Kind: "script", VersionControlled: true}); err != nil {
+		t.Fatal(err)
+	}
+	mustMkdir(t, stateDirectory(repo))
+	mustWrite(t, statePath(repo), "{}\n")
+
+	stderr, err := runHookWithSh(repo, path)
+	if err != nil {
+		t.Fatalf("停用時，進版控的 hook 應放行：%v, stderr=%q", err, stderr)
+	}
+	if !strings.Contains(stderr, "已由 git config hooks.leakbolt false 停用") {
+		t.Fatalf("stderr 未含停用訊息：%q", stderr)
+	}
+}
+
+func TestUnversionedHookMissingLeakboltReportsPATH(t *testing.T) {
+	repo := testGitRepo(t)
+	mustRunGit(t, repo, "config", "hooks.leakbolt", "true")
 	t.Setenv("PATH", "/usr/bin:/bin")
 	path := filepath.Join(repo, ".git", "hooks", "pre-commit")
 	if err := writeHookTarget(hookTarget{Path: path, Kind: "script"}); err != nil {
@@ -236,13 +310,14 @@ func TestUnversionedHookBlocksWhenLeakboltMissing(t *testing.T) {
 	if err == nil {
 		t.Fatal("leakbolt 不在 PATH 時，不進版控的 hook 應失敗")
 	}
-	if !strings.Contains(stderr, "commit 已中止") {
-		t.Fatalf("stderr 未含中止訊息：%q", stderr)
+	if !strings.Contains(stderr, "PATH=/usr/bin:/bin") {
+		t.Fatalf("stderr 未含 PATH：%q", stderr)
 	}
 }
 
 func TestVersionControlledHookAllowsMissingLeakboltWithoutState(t *testing.T) {
 	repo := testGitRepo(t)
+	mustRunGit(t, repo, "config", "hooks.leakbolt", "true")
 	t.Setenv("PATH", "/usr/bin:/bin")
 	path := filepath.Join(repo, ".husky", "pre-commit")
 	if err := writeHookTarget(hookTarget{Path: path, Kind: "script", VersionControlled: true}); err != nil {
@@ -260,6 +335,7 @@ func TestVersionControlledHookAllowsMissingLeakboltWithoutState(t *testing.T) {
 
 func TestVersionControlledHookBlocksMissingLeakboltWithState(t *testing.T) {
 	repo := testGitRepo(t)
+	mustRunGit(t, repo, "config", "hooks.leakbolt", "true")
 	t.Setenv("PATH", "/usr/bin:/bin")
 	path := filepath.Join(repo, ".husky", "pre-commit")
 	if err := writeHookTarget(hookTarget{Path: path, Kind: "script", VersionControlled: true}); err != nil {
