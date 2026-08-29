@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -48,17 +49,17 @@ func TestDetectHookTarget(t *testing.T) {
 
 func TestAppendScriptHookIsIdempotent(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "pre-commit")
-	if err := writeScriptHook(path); err != nil {
+	if err := writeScriptHook(path, false); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeScriptHook(path); err != nil {
+	if err := writeScriptHook(path, false); err != nil {
 		t.Fatal(err)
 	}
 	content, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(content) != "#!/bin/sh\n# Added by LeakBolt\n"+hookGuard {
+	if string(content) != "#!/bin/sh\n# Added by LeakBolt\n"+hookGuard(false) {
 		t.Fatalf("unexpected hook:\n%s", content)
 	}
 }
@@ -66,14 +67,14 @@ func TestAppendScriptHookIsIdempotent(t *testing.T) {
 func TestAppendLefthookAddsToPreCommitBlock(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "lefthook.yml")
 	mustWrite(t, path, "pre-push:\n  commands:\n    existing:\n      run: echo push\npre-commit:\n  commands:\n    existing:\n      run: echo commit\n")
-	if err := appendLefthook(path); err != nil {
+	if err := appendLefthook(path, true); err != nil {
 		t.Fatal(err)
 	}
 	content, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "pre-push:\n  commands:\n    existing:\n      run: echo push\npre-commit:\n  commands:\n    leakbolt:\n      run: |\n        if command -v leakbolt >/dev/null 2>&1; then\n          leakbolt scan --staged || exit 1\n        fi\n    existing:\n      run: echo commit\n"
+	want := "pre-push:\n  commands:\n    existing:\n      run: echo push\npre-commit:\n  commands:\n    leakbolt:\n      run: |\n        " + strings.ReplaceAll(strings.TrimSuffix(hookGuard(true), "\n"), "\n", "\n        ") + "\n    existing:\n      run: echo commit\n"
 	if string(content) != want {
 		t.Fatalf("unexpected lefthook config:\n%s", content)
 	}
@@ -82,14 +83,16 @@ func TestAppendLefthookAddsToPreCommitBlock(t *testing.T) {
 func TestAppendPreCommitConfigExpandsEmptyRepos(t *testing.T) {
 	path := filepath.Join(t.TempDir(), ".pre-commit-config.yaml")
 	mustWrite(t, path, "repos: []\n")
-	if err := appendPreCommitConfig(path); err != nil {
+	if err := appendPreCommitConfig(path, true); err != nil {
 		t.Fatal(err)
 	}
 	content, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(content[:len("repos:\n")]) != "repos:\n" || !containsGuard(string(content)) {
+	if string(content[:len("repos:\n")]) != "repos:\n" ||
+		!containsGuard(string(content)) ||
+		!strings.Contains(string(content), "git rev-parse --git-common-dir") {
 		t.Fatalf("unexpected pre-commit config:\n%s", content)
 	}
 }
@@ -165,7 +168,7 @@ func TestWriteScriptHookRunsFirst(t *testing.T) {
 	path := filepath.Join(dir, "pre-commit")
 	mustWrite(t, path, "#!/usr/bin/env sh\nnpm test\n")
 
-	if err := writeScriptHook(path); err != nil {
+	if err := writeScriptHook(path, true); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(path)
@@ -187,7 +190,7 @@ func TestWriteScriptHookRunsFirst(t *testing.T) {
 	}
 
 	// 重複安裝不應該重複寫入
-	if err := writeScriptHook(path); err != nil {
+	if err := writeScriptHook(path, true); err != nil {
 		t.Fatal(err)
 	}
 	again, _ := os.ReadFile(path)
@@ -202,7 +205,7 @@ func TestScriptHookDoesNotKillOtherChecks(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "pre-commit")
 	mustWrite(t, path, "#!/bin/sh\nnpm test\n")
-	if err := writeScriptHook(path); err != nil {
+	if err := writeScriptHook(path, true); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(path)
@@ -219,6 +222,68 @@ func TestScriptHookDoesNotKillOtherChecks(t *testing.T) {
 	if !strings.Contains(got, "npm test") {
 		t.Errorf("原本的檢查必須保留，實際：%q", got)
 	}
+}
+
+func TestUnversionedHookBlocksWhenLeakboltMissing(t *testing.T) {
+	repo := testGitRepo(t)
+	t.Setenv("PATH", "/usr/bin:/bin")
+	path := filepath.Join(repo, ".git", "hooks", "pre-commit")
+	if err := writeHookTarget(hookTarget{Path: path, Kind: "script"}); err != nil {
+		t.Fatal(err)
+	}
+
+	stderr, err := runHookWithSh(repo, path)
+	if err == nil {
+		t.Fatal("leakbolt 不在 PATH 時，不進版控的 hook 應失敗")
+	}
+	if !strings.Contains(stderr, "commit 已中止") {
+		t.Fatalf("stderr 未含中止訊息：%q", stderr)
+	}
+}
+
+func TestVersionControlledHookAllowsMissingLeakboltWithoutState(t *testing.T) {
+	repo := testGitRepo(t)
+	t.Setenv("PATH", "/usr/bin:/bin")
+	path := filepath.Join(repo, ".husky", "pre-commit")
+	if err := writeHookTarget(hookTarget{Path: path, Kind: "script", VersionControlled: true}); err != nil {
+		t.Fatal(err)
+	}
+
+	stderr, err := runHookWithSh(repo, path)
+	if err != nil {
+		t.Fatalf("沒有 state.json 時，進版控的 hook 應放行：%v, stderr=%q", err, stderr)
+	}
+	if stderr != "" {
+		t.Fatalf("沒有 state.json 時不應輸出訊息：%q", stderr)
+	}
+}
+
+func TestVersionControlledHookBlocksMissingLeakboltWithState(t *testing.T) {
+	repo := testGitRepo(t)
+	t.Setenv("PATH", "/usr/bin:/bin")
+	path := filepath.Join(repo, ".husky", "pre-commit")
+	if err := writeHookTarget(hookTarget{Path: path, Kind: "script", VersionControlled: true}); err != nil {
+		t.Fatal(err)
+	}
+	mustMkdir(t, stateDirectory(repo))
+	mustWrite(t, statePath(repo), "{}\n")
+
+	stderr, err := runHookWithSh(repo, path)
+	if err == nil {
+		t.Fatal("有 state.json 時，進版控的 hook 應失敗")
+	}
+	if !strings.Contains(stderr, "commit 已中止") {
+		t.Fatalf("stderr 未含中止訊息：%q", stderr)
+	}
+}
+
+func runHookWithSh(repo, path string) (string, error) {
+	cmd := exec.Command("/bin/sh", path)
+	cmd.Dir = repo
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	return stderr.String(), err
 }
 
 func TestVerifyHookReachableIgnoresExecBitOnWindows(t *testing.T) {

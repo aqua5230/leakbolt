@@ -9,9 +9,28 @@ import (
 	"strings"
 )
 
-const hookGuard = "if command -v leakbolt >/dev/null 2>&1; then\n" +
-	"  leakbolt scan --staged || exit 1\n" +
-	"fi\n"
+func hookGuard(versionControlled bool) string {
+	guard := "if command -v leakbolt >/dev/null 2>&1; then\n" +
+		"  leakbolt scan --staged || exit 1\n"
+	if versionControlled {
+		return guard +
+			"elif [ -f \"$(git rev-parse --git-common-dir)/leakbolt/state.json\" ]; then\n" +
+			"  echo \"LeakBolt：找不到 leakbolt 執行檔，commit 已中止。\" >&2\n" +
+			"  echo \"  這台機器裝過 LeakBolt，但現在 PATH 上找不到它。\" >&2\n" +
+			"  echo \"  把 leakbolt 放回 PATH，或移除專案 hook 設定裡的 LeakBolt 區塊來停用檢查。\" >&2\n" +
+			"  echo \"  這次要跳過檢查：git commit --no-verify\" >&2\n" +
+			"  exit 1\n" +
+			"fi\n"
+	}
+	return guard +
+		"else\n" +
+		"  echo \"LeakBolt：找不到 leakbolt 執行檔，commit 已中止。\" >&2\n" +
+		"  echo \"  這個 repo 裝過 LeakBolt，但現在 PATH 上找不到它。\" >&2\n" +
+		"  echo \"  把 leakbolt 放回 PATH，或刪掉 .git/hooks/pre-commit 停用檢查。\" >&2\n" +
+		"  echo \"  這次要跳過檢查：git commit --no-verify\" >&2\n" +
+		"  exit 1\n" +
+		"fi\n"
+}
 
 type hookTarget struct {
 	Path              string
@@ -94,11 +113,11 @@ func installHook(repo string, localOnly bool) (installResult, error) {
 func writeHookTarget(target hookTarget) error {
 	switch target.Kind {
 	case "script":
-		return writeScriptHook(target.Path)
+		return writeScriptHook(target.Path, target.VersionControlled)
 	case "lefthook":
-		return appendLefthook(target.Path)
+		return appendLefthook(target.Path, target.VersionControlled)
 	case "precommit":
-		return appendPreCommitConfig(target.Path)
+		return appendPreCommitConfig(target.Path, target.VersionControlled)
 	default:
 		return fmt.Errorf("未知 hook 類型：%s", target.Kind)
 	}
@@ -109,7 +128,7 @@ func writeHookTarget(target hookTarget) error {
 // 追加到尾端會被前面任何一個失敗的指令擋掉：husky 預設的 .husky/pre-commit 內容是 npm test，
 // 空專案跑起來必定失敗，腳本就結束了，我們那行根本不會執行——使用者以為裝好了，其實沒在掃。
 // 資安檢查要最先跑：擋得住就快點擋，也不被別人的失敗遮蔽。
-func writeScriptHook(path string) error {
+func writeScriptHook(path string, versionControlled bool) error {
 	content, err := os.ReadFile(path)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
@@ -121,7 +140,7 @@ func writeScriptHook(path string) error {
 		return err
 	}
 
-	block := "# Added by LeakBolt\n" + hookGuard
+	block := "# Added by LeakBolt\n" + hookGuard(versionControlled)
 
 	existing := string(content)
 	var out string
@@ -148,7 +167,7 @@ func writeScriptHook(path string) error {
 	return os.Chmod(path, 0o755)
 }
 
-func appendLefthook(path string) error {
+func appendLefthook(path string, versionControlled bool) error {
 	content, err := os.ReadFile(path)
 	if err != nil {
 		return err
@@ -160,7 +179,8 @@ func appendLefthook(path string) error {
 	if strings.Contains(text, "pre-commit: {}") || strings.Contains(text, "pre-commit: {") {
 		return fmt.Errorf("不支援 inline 的 lefthook pre-commit 設定；請手動加入 LeakBolt")
 	}
-	entry := "    leakbolt:\n      run: |\n        " + strings.ReplaceAll(strings.TrimSuffix(hookGuard, "\n"), "\n", "\n        ") + "\n"
+	guard := hookGuard(versionControlled)
+	entry := "    leakbolt:\n      run: |\n        " + strings.ReplaceAll(strings.TrimSuffix(guard, "\n"), "\n", "\n        ") + "\n"
 	start, end, found := yamlTopLevelBlock(text, "pre-commit")
 	if found {
 		block := text[start:end]
@@ -179,7 +199,7 @@ func appendLefthook(path string) error {
 	return os.WriteFile(path, []byte(text), 0o644)
 }
 
-func appendPreCommitConfig(path string) error {
+func appendPreCommitConfig(path string, versionControlled bool) error {
 	content, err := os.ReadFile(path)
 	if err != nil {
 		return err
@@ -200,7 +220,10 @@ func appendPreCommitConfig(path string) error {
 	if !strings.HasSuffix(text, "\n") {
 		text += "\n"
 	}
-	text += "\n# Added by LeakBolt\n- repo: local\n  hooks:\n    - id: leakbolt\n      name: LeakBolt staged secret scan\n      entry: sh -c 'if command -v leakbolt >/dev/null 2>&1; then leakbolt scan --staged || exit 1; fi'\n      language: system\n      pass_filenames: false\n"
+	guard := strings.ReplaceAll(strings.TrimSpace(hookGuard(versionControlled)), "\n", "; ")
+	guard = strings.ReplaceAll(guard, "then; ", "then ")
+	guard = strings.ReplaceAll(guard, "else; ", "else ")
+	text += "\n# Added by LeakBolt\n- repo: local\n  hooks:\n    - id: leakbolt\n      name: LeakBolt staged secret scan\n      entry: sh -c '" + guard + "'\n      language: system\n      pass_filenames: false\n"
 	return os.WriteFile(path, []byte(text), 0o644)
 }
 

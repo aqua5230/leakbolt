@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"strings"
 )
 
@@ -116,6 +117,13 @@ func runDoctor(repo string, stdout io.Writer) int {
 		fmt.Fprintln(stdout, "hook 守衛：正常")
 	} else {
 		fmt.Fprintln(stdout, "hook 守衛：異常（hook 可能已被覆寫）")
+		ok = false
+	}
+
+	if path, pathErr := exec.LookPath("leakbolt"); pathErr == nil {
+		fmt.Fprintf(stdout, "leakbolt 執行檔：正常（%s）\n", path)
+	} else {
+		fmt.Fprintln(stdout, "leakbolt 執行檔：異常（PATH 上找不到 leakbolt，hook 會擋下所有 commit）")
 		ok = false
 	}
 

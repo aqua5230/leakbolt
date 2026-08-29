@@ -107,5 +107,17 @@ commit 成功、完全沒有任何訊息；同一個檔案手動跑 `leakbolt sc
 只在本機生效、不進版控的情況，跑過 install 的人本來就有 leakbolt，之後找不到就是異常，
 無聲放行等於 DECISION.md 三件不能忍第 2 條的「錯誤的安全感」。
 
-尚未修，待決定：至少 doctor 要能抓到；hook 本身要不要在找不到時改成擋下來（會影響隊友）
-是產品決定。
+**已修（2026-08-29 22:42）**，細節見 `fix-report-2.md`：
+
+- hook 依「會不會進版控」分兩種。不進版控的 `.git/hooks/pre-commit` 找不到 leakbolt
+  就直接擋；會進版控的 husky／lefthook／pre-commit 設定則先看
+  `<git-common-dir>/leakbolt/state.json` 在不在——在就擋（這台機器裝過），
+  不在就放行（沒裝過 leakbolt 的隊友）。
+- `leakbolt doctor` 新增一行「leakbolt 執行檔」可達性檢查。
+
+決定擋而不是放行的理由：`git commit --no-verify` 是 git 內建的萬用跳過方式，
+擋下來不會把任何人卡死。而且沒有保護傘才是 shell hook 的預設行為——
+指令找不到，sh 回 127，commit 本來就會被擋；原本那句 `command -v` 保護傘才是特例。
+
+實機驗過四種情況：leakbolt 不在 PATH → 擋且訊息清楚；`--no-verify` → 放行；
+leakbolt 在 PATH ＋ 有密鑰 → 正常擋下並給指紋；leakbolt 在 PATH ＋ 乾淨檔案 → 通過。

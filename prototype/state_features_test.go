@@ -167,7 +167,7 @@ func TestUntrackRemovesIndexKeepsFileAndUpdatesIgnore(t *testing.T) {
 func TestDoctorDetectsChangedHooksPath(t *testing.T) {
 	repo := testGitRepo(t)
 	t.Setenv("GIT_CONFIG_GLOBAL", filepath.Join(t.TempDir(), "global.gitconfig"))
-	if err := writeScriptHook(filepath.Join(repo, ".git", "hooks", "pre-commit")); err != nil {
+	if err := writeScriptHook(filepath.Join(repo, ".git", "hooks", "pre-commit"), false); err != nil {
 		t.Fatal(err)
 	}
 	if err := recordInstallation(repo, "script"); err != nil {
@@ -188,7 +188,7 @@ func TestDoctorDetectsChangedSystemHooksPath(t *testing.T) {
 	systemConfig := filepath.Join(t.TempDir(), "system.gitconfig")
 	t.Setenv("GIT_CONFIG_SYSTEM", systemConfig)
 	t.Setenv("GIT_CONFIG_GLOBAL", filepath.Join(t.TempDir(), "global.gitconfig"))
-	if err := writeScriptHook(filepath.Join(repo, ".git", "hooks", "pre-commit")); err != nil {
+	if err := writeScriptHook(filepath.Join(repo, ".git", "hooks", "pre-commit"), false); err != nil {
 		t.Fatal(err)
 	}
 	if err := recordInstallation(repo, "script"); err != nil {
@@ -209,7 +209,7 @@ func TestDoctorReportsUnrecordedSystemHooksPathForOldState(t *testing.T) {
 	repo := testGitRepo(t)
 	t.Setenv("GIT_CONFIG_SYSTEM", filepath.Join(t.TempDir(), "system.gitconfig"))
 	t.Setenv("GIT_CONFIG_GLOBAL", filepath.Join(t.TempDir(), "global.gitconfig"))
-	if err := writeScriptHook(filepath.Join(repo, ".git", "hooks", "pre-commit")); err != nil {
+	if err := writeScriptHook(filepath.Join(repo, ".git", "hooks", "pre-commit"), false); err != nil {
 		t.Fatal(err)
 	}
 	if err := recordInstallation(repo, "script"); err != nil {

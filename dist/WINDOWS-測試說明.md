@@ -103,6 +103,29 @@ git config --file $env:GIT_CONFIG_SYSTEM core.hooksPath C:/temp/myhooks
 `git config --system --get core.hooksPath` 讀得到暫存檔的值，
 沒設時回 exit 1。leakbolt 內部就是跑這個指令。）
 
+**情境 E：leakbolt 不在 PATH 上時，hook 要擋下 commit**
+
+這版改掉了一個真的漏洞：舊版的 hook 找不到 leakbolt 就整段跳過、直接放行，
+帶著密鑰的 commit 會安靜通過，一個字都不印。
+
+驗證方式：把 `leakbolt.exe` 暫時移到別的資料夾（或從 PATH 拿掉），
+然後帶一個假密鑰 commit。預期看到：
+
+```
+LeakBolt：找不到 leakbolt 執行檔，commit 已中止。
+  這個 repo 裝過 LeakBolt，但現在 PATH 上找不到它。
+  把 leakbolt 放回 PATH，或刪掉 .git/hooks/pre-commit 停用檢查。
+  這次要跳過檢查：git commit --no-verify
+```
+
+commit 要失敗。如果 commit 成功了，代表這個修復在 Windows 上沒生效，請回報。
+
+假密鑰用這個（是專案語料庫裡的真陽性樣本，不是真的 key）：
+
+```
+AWS_ACCESS_KEY_ID = "AKIAIMNOJVGFDXXXE4OA"
+```
+
 **新增的警告訊息**
 
 這版起，gitleaks 版本不是 8.30.1 時，每次掃描都會在 stderr 印一行：
@@ -131,11 +154,13 @@ certutil -hashfile dist\leakbolt-windows-amd64.exe SHA256
 certutil -hashfile dist\leakbolt-windows-arm64.exe SHA256
 ```
 
-2026-08-29 22:31 修復後打包的版本應該是：
+2026-08-29 22:42 修復後打包的版本應該是：
 
 ```
-amd64  523e631601e8ceac370f7b98c8d650cc53144b8e2e18fcf87ab0202f1d955590
-arm64  fb155a3f50d4058a622ef582d8e236ad5a68c4438ef540c41fd71da42a3af3d4
+amd64  5781c6742d3a0081e7d9b557959d67fe4b70667aad8a547b067e64bd488b28c4
+arm64  23a43577ccc2115c7e6731e26534f3a16f30d0be0c4a8e19eb0693774ab0e16f
 ```
+
+（雜湊每次重新打包都會變。以本檔記錄的時間為準，對不上就是拿到舊的。）
 
 對不上就是複製到舊版了，重新複製一次再測——不然測出來的 FAIL 無法判讀。
