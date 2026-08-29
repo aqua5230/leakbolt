@@ -142,10 +142,12 @@ func corpusSamplePath(corpus, relative string) (string, error) {
 func scanFile(gitleaks, path string) ([]finding, error) {
 	// 一定要帶上跟正式掃描同一份補充規則，否則量到的不是產品實際行為。
 	args := []string{"detect", "--no-git", "--source", path, "--report-format", "json", "--report-path", "-"}
-	if configPath, cleanup, ok := writeSupplementaryRules(); ok {
-		defer cleanup()
-		args = append([]string{"detect", "--config", configPath}, args[1:]...)
+	configPath, cleanup, err := writeSupplementaryRules()
+	if err != nil {
+		return nil, fmt.Errorf("無法寫入補充規則暫存檔：%w", err)
 	}
+	defer cleanup()
+	args = append([]string{"detect", "--config", configPath}, args[1:]...)
 	cmd := exec.Command(gitleaks, args...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

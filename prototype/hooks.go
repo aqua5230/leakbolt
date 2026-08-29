@@ -64,9 +64,12 @@ func isHuskyHooksPath(repo, value string) bool {
 }
 
 func installHook(repo string, localOnly bool) (installResult, error) {
-	for _, scope := range []string{"local", "global"} {
+	for _, scope := range []string{"local", "global", "system"} {
 		value, set, err := gitConfig(repo, scope)
 		if err != nil {
+			if scope == "system" {
+				continue
+			}
 			return installResult{}, err
 		}
 		if !set {
@@ -250,7 +253,7 @@ func isFile(path string) bool {
 
 // effectiveHookPath 回傳 git 實際會去執行的 pre-commit 路徑（尊重 core.hooksPath）。
 func effectiveHookPath(repo string) string {
-	for _, scope := range []string{"local", "global"} {
+	for _, scope := range []string{"local", "global", "system"} {
 		if value, set, err := gitConfig(repo, scope); err == nil && set {
 			if filepath.IsAbs(value) {
 				return filepath.Join(value, "pre-commit")

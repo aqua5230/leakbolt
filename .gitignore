@@ -1,6 +1,5 @@
-# 建置產出物（9.5MB，不進版控；用 scripts 重新編譯即可）
-dist/
+# 建置產出物（各 ~5MB，不進版控；重新編譯指令見 dist/WINDOWS-測試說明.md）
+dist/*.exe
 
 # Go
-*.exe
 coverage.out

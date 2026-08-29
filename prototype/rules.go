@@ -2,6 +2,7 @@ package main
 
 import (
 	_ "embed"
+	"fmt"
 	"os"
 	"path/filepath"
 )
@@ -14,19 +15,19 @@ import (
 //go:embed rules/leakbolt.toml
 var supplementaryRules []byte
 
-// writeSupplementaryRules 把內嵌規則寫到暫存檔，回傳路徑與清理函式。
+// writeSupplementaryRules 把內嵌規則寫到暫存檔，回傳路徑、清理函式與錯誤。
 // 寫失敗不算致命——退回 gitleaks 預設規則仍然掃得動，只是少了補充規則。
-func writeSupplementaryRules() (string, func(), bool) {
+func writeSupplementaryRules() (string, func(), error) {
 	dir, err := os.MkdirTemp("", "leakbolt-rules-")
 	if err != nil {
-		return "", func() {}, false
+		return "", func() {}, fmt.Errorf("建立暫存目錄失敗：%w", err)
 	}
 	cleanup := func() { os.RemoveAll(dir) }
 
 	path := filepath.Join(dir, "leakbolt.toml")
 	if err := os.WriteFile(path, supplementaryRules, 0o600); err != nil {
 		cleanup()
-		return "", func() {}, false
+		return "", func() {}, fmt.Errorf("寫入 %s 失敗：%w", path, err)
 	}
-	return path, cleanup, true
+	return path, cleanup, nil
 }

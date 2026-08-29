@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -137,6 +138,24 @@ func TestIsHuskyHooksPath(t *testing.T) {
 	bare := t.TempDir()
 	if isHuskyHooksPath(bare, filepath.Join(".husky", "_")) {
 		t.Error("沒有 .husky 目錄時不應判定為 husky")
+	}
+}
+
+func TestSystemHooksPathBlocksInstallAndControlsEffectivePath(t *testing.T) {
+	repo := testGitRepo(t)
+	systemConfig := filepath.Join(t.TempDir(), "system.gitconfig")
+	t.Setenv("GIT_CONFIG_SYSTEM", systemConfig)
+	t.Setenv("GIT_CONFIG_GLOBAL", filepath.Join(t.TempDir(), "global.gitconfig"))
+	mustRunGit(t, repo, "config", "--file", systemConfig, "core.hooksPath", ".system-hooks")
+
+	_, err := installHook(repo, false)
+	var occupied *HooksPathOccupiedError
+	if !errors.As(err, &occupied) || occupied.Scope != "system" {
+		t.Fatalf("installHook error = %#v, want system HooksPathOccupiedError", err)
+	}
+	want := filepath.Join(repo, ".system-hooks", "pre-commit")
+	if got := effectiveHookPath(repo); got != want {
+		t.Fatalf("effectiveHookPath = %q, want %q", got, want)
 	}
 }
 

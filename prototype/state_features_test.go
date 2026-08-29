@@ -183,6 +183,57 @@ func TestDoctorDetectsChangedHooksPath(t *testing.T) {
 	}
 }
 
+func TestDoctorDetectsChangedSystemHooksPath(t *testing.T) {
+	repo := testGitRepo(t)
+	systemConfig := filepath.Join(t.TempDir(), "system.gitconfig")
+	t.Setenv("GIT_CONFIG_SYSTEM", systemConfig)
+	t.Setenv("GIT_CONFIG_GLOBAL", filepath.Join(t.TempDir(), "global.gitconfig"))
+	if err := writeScriptHook(filepath.Join(repo, ".git", "hooks", "pre-commit")); err != nil {
+		t.Fatal(err)
+	}
+	if err := recordInstallation(repo, "script"); err != nil {
+		t.Fatal(err)
+	}
+	mustRunGit(t, repo, "config", "--file", systemConfig, "core.hooksPath", ".system-hooks")
+
+	var output bytes.Buffer
+	if code := runDoctor(repo, &output); code != 1 {
+		t.Fatalf("doctor exit = %d, output=%s", code, output.String())
+	}
+	if !strings.Contains(output.String(), "core.hooksPath (system)：異常") {
+		t.Fatalf("doctor 未偵測 system hooksPath 改動：%s", output.String())
+	}
+}
+
+func TestDoctorReportsUnrecordedSystemHooksPathForOldState(t *testing.T) {
+	repo := testGitRepo(t)
+	t.Setenv("GIT_CONFIG_SYSTEM", filepath.Join(t.TempDir(), "system.gitconfig"))
+	t.Setenv("GIT_CONFIG_GLOBAL", filepath.Join(t.TempDir(), "global.gitconfig"))
+	if err := writeScriptHook(filepath.Join(repo, ".git", "hooks", "pre-commit")); err != nil {
+		t.Fatal(err)
+	}
+	if err := recordInstallation(repo, "script"); err != nil {
+		t.Fatal(err)
+	}
+	state, err := loadState(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.Install.SystemHooksPathDigest = ""
+	if err := writeState(repo, state); err != nil {
+		t.Fatal(err)
+	}
+
+	var output bytes.Buffer
+	if code := runDoctor(repo, &output); code != 1 {
+		t.Fatalf("doctor exit = %d, output=%s", code, output.String())
+	}
+	want := "core.hooksPath (system)：未記錄（舊版安裝記錄，請重新執行 leakbolt install）"
+	if !strings.Contains(output.String(), want) {
+		t.Fatalf("doctor 未回報舊版 state：%s", output.String())
+	}
+}
+
 func testRepo(t *testing.T) string {
 	t.Helper()
 	repo := t.TempDir()

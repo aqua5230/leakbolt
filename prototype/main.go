@@ -100,7 +100,7 @@ func runInstall(args []string, stdout, stderr io.Writer) int {
 	}
 
 	fmt.Fprintln(stdout, "開始掃描完整 git 歷史…")
-	findings, err := scanHistory(repo)
+	findings, err := scanHistory(repo, stderr)
 	if err != nil {
 		return reportScanError(stderr, err)
 	}
@@ -130,7 +130,7 @@ func runScanCommand(args []string, stdout, stderr io.Writer) int {
 	}
 
 	if *staged {
-		findings, err := scanStaged(repo)
+		findings, err := scanStaged(repo, stderr)
 		if err != nil {
 			return reportScanError(stderr, err)
 		}
@@ -155,7 +155,7 @@ func runScanCommand(args []string, stdout, stderr io.Writer) int {
 		return 0
 	}
 
-	findings, err := scanHistory(repo)
+	findings, err := scanHistory(repo, stderr)
 	if err != nil {
 		return reportScanError(stderr, err)
 	}

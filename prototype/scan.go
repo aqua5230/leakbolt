@@ -10,6 +10,8 @@ import (
 	"strings"
 )
 
+const requiredGitleaksVersion = "8.30.1"
+
 type Finding struct {
 	RuleID string `json:"RuleID"`
 	File   string `json:"File"`
@@ -28,43 +30,67 @@ func (e *MissingGitleaksError) Error() string {
 	return "找不到 gitleaks。請安裝 gitleaks v8.30.1 後重試：https://github.com/gitleaks/gitleaks"
 }
 
-func scanStaged(repo string) ([]Finding, error) {
-	return runGitleaks(repo, "protect", "--staged", "--report-format", "json", "--report-path", "-")
+func scanStaged(repo string, stderr io.Writer) ([]Finding, error) {
+	return runGitleaks(repo, stderr, "protect", "--staged", "--report-format", "json", "--report-path", "-")
 }
 
-func scanHistory(repo string) ([]Finding, error) {
-	return runGitleaks(repo, "detect", "--report-format", "json", "--report-path", "-")
+func scanHistory(repo string, stderr io.Writer) ([]Finding, error) {
+	return runGitleaks(repo, stderr, "detect", "--report-format", "json", "--report-path", "-")
 }
 
-func runGitleaks(repo string, args ...string) ([]Finding, error) {
-	path, err := exec.LookPath("gitleaks")
-	if err != nil {
-		return nil, &MissingGitleaksError{}
+func runGitleaks(repo string, stderr io.Writer, args ...string) ([]Finding, error) {
+	path, version, versionErr := gitleaksPathAndVersion()
+	if path == "" {
+		return nil, versionErr
+	}
+	if versionErr != nil {
+		fmt.Fprintf(stderr, "警告：無法確認 gitleaks 版本（%v）。偵測結果可能與品質基準不同。\n", versionErr)
+	} else if version != requiredGitleaksVersion {
+		fmt.Fprintf(stderr, "警告：gitleaks 版本為 %s，LeakBolt 鎖定的是 %s。偵測結果可能與品質基準不同。\n", version, requiredGitleaksVersion)
 	}
 
-	if configPath, cleanup, ok := writeSupplementaryRules(); ok {
+	if configPath, cleanup, rulesErr := writeSupplementaryRules(); rulesErr == nil {
 		defer cleanup()
 		args = append([]string{args[0], "--config", configPath}, args[1:]...)
+	} else {
+		fmt.Fprintf(stderr, "警告：無法寫入補充規則暫存檔（%v），這次掃描只用 gitleaks 預設規則，未涵蓋 LeakBolt 自帶規則。\n", rulesErr)
 	}
 
 	cmd := exec.Command(path, args...)
 	cmd.Dir = repo
-	var stdout, stderr bytes.Buffer
+	var stdout, commandStderr bytes.Buffer
 	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	cmd.Stderr = &commandStderr
 	runErr := cmd.Run()
 	findings, parseErr := parseFindings(stdout.Bytes())
 	if parseErr == nil {
 		return findings, nil
 	}
 	if runErr != nil {
-		message := strings.TrimSpace(stderr.String())
+		message := strings.TrimSpace(commandStderr.String())
 		if message == "" {
 			message = runErr.Error()
 		}
 		return nil, fmt.Errorf("gitleaks 執行失敗：%s", message)
 	}
 	return nil, parseErr
+}
+
+func gitleaksPathAndVersion() (string, string, error) {
+	path, err := exec.LookPath("gitleaks")
+	if err != nil {
+		return "", "", &MissingGitleaksError{}
+	}
+	output, err := exec.Command(path, "version").Output()
+	if err != nil {
+		return path, "", fmt.Errorf("執行 gitleaks version 失敗：%w", err)
+	}
+	version := strings.TrimSpace(string(output))
+	version = strings.TrimPrefix(version, "v")
+	if version == "" {
+		return path, "", fmt.Errorf("gitleaks version 沒有輸出版本字串")
+	}
+	return path, version, nil
 }
 
 func parseFindings(data []byte) ([]Finding, error) {

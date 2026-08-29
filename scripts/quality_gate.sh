@@ -18,11 +18,10 @@ export GOCACHE
 
 cd "$root/prototype"
 
-# corpusbench 是獨立的 main 套件，內嵌自己的一份規則。兩份分岔的話，
-# 量到的就不是產品實際行為——那比沒有量測更糟。同步並驗證。
-cp rules/leakbolt.toml cmd/corpusbench/rules/leakbolt.toml
+# corpusbench 是獨立的 main 套件，內嵌自己的一份規則。先確認兩份一致；
+# 分岔時直接失敗，避免量到的不是產品實際行為。
 if ! cmp -s rules/leakbolt.toml cmd/corpusbench/rules/leakbolt.toml; then
-	echo "quality gate 失敗：補充規則同步失敗" >&2
+	echo "quality gate 失敗：補充規則不一致；請執行：cp prototype/rules/leakbolt.toml prototype/cmd/corpusbench/rules/leakbolt.toml" >&2
 	exit 2
 fi
 

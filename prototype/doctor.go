@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -20,6 +21,10 @@ func recordInstallation(repo, hookKind string) error {
 	if err != nil {
 		return err
 	}
+	systemValue, systemSet, err := gitConfig(repo, "system")
+	if err != nil {
+		systemValue, systemSet = "", false
+	}
 	localDigest, err := hookPathDigest(state, "local", localValue, localSet)
 	if err != nil {
 		return err
@@ -28,11 +33,16 @@ func recordInstallation(repo, hookKind string) error {
 	if err != nil {
 		return err
 	}
+	systemDigest, err := hookPathDigest(state, "system", systemValue, systemSet)
+	if err != nil {
+		return err
+	}
 	state.Install = &InstallState{
 		InstalledOn:           dateToday(),
 		HookKind:              hookKind,
 		LocalHooksPathDigest:  localDigest,
 		GlobalHooksPathDigest: globalDigest,
+		SystemHooksPathDigest: systemDigest,
 	}
 	return writeState(repo, state)
 }
@@ -55,22 +65,37 @@ func runDoctor(repo string, stdout io.Writer) int {
 	}
 
 	ok := true
-	for _, scope := range []string{"local", "global"} {
-		value, set, configErr := gitConfig(repo, scope)
-		if configErr != nil {
-			fmt.Fprintf(stdout, "core.hooksPath (%s)：異常（%v）\n", scope, configErr)
+	for _, scope := range []string{"local", "global", "system"} {
+		var want string
+		switch scope {
+		case "local":
+			want = state.Install.LocalHooksPathDigest
+		case "global":
+			want = state.Install.GlobalHooksPathDigest
+		case "system":
+			want = state.Install.SystemHooksPathDigest
+		}
+		if scope == "system" && want == "" {
+			fmt.Fprintln(stdout, "core.hooksPath (system)：未記錄（舊版安裝記錄，請重新執行 leakbolt install）")
 			ok = false
 			continue
+		}
+
+		value, set, configErr := gitConfig(repo, scope)
+		if configErr != nil {
+			if scope == "system" {
+				value, set, configErr = "", false, nil
+			} else {
+				fmt.Fprintf(stdout, "core.hooksPath (%s)：異常（%v）\n", scope, configErr)
+				ok = false
+				continue
+			}
 		}
 		digest, digestErr := hookPathDigest(state, scope, value, set)
 		if digestErr != nil {
 			fmt.Fprintf(stdout, "core.hooksPath (%s)：異常（%v）\n", scope, digestErr)
 			ok = false
 			continue
-		}
-		want := state.Install.LocalHooksPathDigest
-		if scope == "global" {
-			want = state.Install.GlobalHooksPathDigest
 		}
 		if digest == want {
 			fmt.Fprintf(stdout, "core.hooksPath (%s)：正常\n", scope)
@@ -92,6 +117,22 @@ func runDoctor(repo string, stdout io.Writer) int {
 	} else {
 		fmt.Fprintln(stdout, "hook 守衛：異常（hook 可能已被覆寫）")
 		ok = false
+	}
+
+	_, version, versionErr := gitleaksPathAndVersion()
+	var missingGitleaks *MissingGitleaksError
+	switch {
+	case errors.As(versionErr, &missingGitleaks):
+		fmt.Fprintln(stdout, "gitleaks 版本：異常（找不到 gitleaks）")
+		ok = false
+	case versionErr != nil:
+		fmt.Fprintf(stdout, "gitleaks 版本：異常（無法查詢版本：%v）\n", versionErr)
+		ok = false
+	case version != requiredGitleaksVersion:
+		fmt.Fprintf(stdout, "gitleaks 版本：異常（找到 %s，預期 %s）\n", version, requiredGitleaksVersion)
+		ok = false
+	default:
+		fmt.Fprintln(stdout, "gitleaks 版本：正常")
 	}
 
 	if !ok {

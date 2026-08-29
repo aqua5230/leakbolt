@@ -8,8 +8,9 @@
 
 ## Deviations
 
-- 現況的 Go 1.27 模組模式無法辨識多個標準庫套件（包含 `crypto/rand`）；
-  `GO111MODULE=off go build ./...`、`GO111MODULE=off go vet ./...`、
-  `GO111MODULE=off go test ./...` 已通過。未能讓無環境變數的三個指令通過。
+- 已解決：Go 1.27 現在無需設定 `GO111MODULE`，可直接執行 `go build ./...`、
+  `go vet ./...`、`go test ./...`。
 - `core.hooksPath` 原文可能是檔案路徑，與 state.json 禁止存路徑衝突；現況以 salt 加碼
   HMAC-SHA256 摘要記錄，doctor 比較摘要，不保存原文。
+- 規格未定義「找到 gitleaks，但 `gitleaks version` 執行失敗或輸出空白」；採保守處理：
+  scan 警告後繼續，doctor 報異常。這與版本不符時的既定降級邊界一致。

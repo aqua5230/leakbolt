@@ -42,6 +42,7 @@ type InstallState struct {
 	HookKind              string `json:"hook_kind"`
 	LocalHooksPathDigest  string `json:"local_hooks_path_digest"`
 	GlobalHooksPathDigest string `json:"global_hooks_path_digest"`
+	SystemHooksPathDigest string `json:"system_hooks_path_digest"`
 }
 
 func stateDirectory(repo string) string {
