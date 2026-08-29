@@ -81,22 +81,27 @@ Git for Windows 自帶一份 system 層 gitconfig。舊版 LeakBolt 只查 local
 `.git\hooks\pre-commit`、回報安裝成功、`doctor` 也顯示正常，
 但 git 實際上根本不會執行那個 hook——等於沒有保護卻以為有。這版修掉了。
 
-驗證方式（會改到你的系統設定，要用系統管理員權限的 PowerShell，測完記得復原）：
+驗證方式。**不要**去改真正的系統設定——用 `GIT_CONFIG_SYSTEM` 這個環境變數
+把 git 的 system 設定臨時指到一個暫存檔就好。這樣不用系統管理員權限，
+關掉這個視窗就自動復原，沒有任何東西需要善後。
+
+在 PowerShell（一般權限即可）貼這三行：
 
 ```
-git config --system core.hooksPath C:\temp\myhooks
-leakbolt install
+$env:GIT_CONFIG_SYSTEM = "$env:TEMP\fake-system-gitconfig"
+git config --file $env:GIT_CONFIG_SYSTEM core.hooksPath C:/temp/myhooks
+.\dist\leakbolt-windows-amd64.exe install
 ```
 
-預期看到：`警告：未安裝 LeakBolt。git config --system core.hooksPath 已設為 "C:\temp\myhooks"；LeakBolt 不會覆寫既有 hook 路徑。`
+預期看到：`警告：未安裝 LeakBolt。git config --system core.hooksPath 已設為 "C:/temp/myhooks"；LeakBolt 不會覆寫既有 hook 路徑。`
 
-復原（**這步一定要做，否則你之後所有 repo 的 hook 都會壞掉**）：
+看到別的（例如「已安裝到 ...」）就是這個修復在 Windows 上沒生效，請回報。
 
-```
-git config --system --unset core.hooksPath
-```
+測完直接關掉這個 PowerShell 視窗，環境變數就沒了，你的 git 設定從頭到尾沒被動過。
 
-不想動系統設定的話跳過這題，回報「未測」即可，不要硬測。
+（這個做法已在 macOS 實測過：設了 `GIT_CONFIG_SYSTEM` 後
+`git config --system --get core.hooksPath` 讀得到暫存檔的值，
+沒設時回 exit 1。leakbolt 內部就是跑這個指令。）
 
 **新增的警告訊息**
 
@@ -116,3 +121,21 @@ cd prototype
 CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o ../dist/leakbolt-windows-amd64.exe .
 CGO_ENABLED=0 GOOS=windows GOARCH=arm64 go build -o ../dist/leakbolt-windows-arm64.exe .
 ```
+
+## 確認你手上的 exe 是修復後的版本
+
+`.exe` 不進版控，所以檔案本身看不出是哪一版。複製到 Windows 之後先對雜湊：
+
+```
+certutil -hashfile dist\leakbolt-windows-amd64.exe SHA256
+certutil -hashfile dist\leakbolt-windows-arm64.exe SHA256
+```
+
+2026-08-29 22:31 修復後打包的版本應該是：
+
+```
+amd64  523e631601e8ceac370f7b98c8d650cc53144b8e2e18fcf87ab0202f1d955590
+arm64  fb155a3f50d4058a622ef582d8e236ad5a68c4438ef540c41fd71da42a3af3d4
+```
+
+對不上就是複製到舊版了，重新複製一次再測——不然測出來的 FAIL 無法判讀。
