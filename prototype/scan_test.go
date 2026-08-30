@@ -78,6 +78,52 @@ func TestRunGitleaksAcceptsCleanReport(t *testing.T) {
 	}
 }
 
+func TestFindGitleaksPathPrefersBundledBinary(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("測試使用 POSIX 執行權限")
+	}
+	dir := t.TempDir()
+	bundled := writeFakeExecutable(t, filepath.Join(dir, "private", "gitleaks"))
+	pathBinary := writeFakeExecutable(t, filepath.Join(dir, "path", "gitleaks"))
+	t.Setenv("PATH", filepath.Dir(pathBinary))
+
+	got, err := findGitleaksPath(bundled)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != bundled {
+		t.Fatalf("gitleaks 路徑 = %q, want %q", got, bundled)
+	}
+}
+
+func TestFindGitleaksPathFallsBackToPATH(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("測試使用 POSIX 執行權限")
+	}
+	dir := t.TempDir()
+	pathBinary := writeFakeExecutable(t, filepath.Join(dir, "path", "gitleaks"))
+	t.Setenv("PATH", filepath.Dir(pathBinary))
+
+	got, err := findGitleaksPath(filepath.Join(dir, "missing", "gitleaks"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != pathBinary {
+		t.Fatalf("gitleaks 路徑 = %q, want %q", got, pathBinary)
+	}
+}
+
+func writeFakeExecutable(t *testing.T, path string) string {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
 func useFakeGitleaks(t *testing.T, version string) (string, string) {
 	t.Helper()
 	if runtime.GOOS == "windows" {

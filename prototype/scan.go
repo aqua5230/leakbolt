@@ -12,6 +12,8 @@ import (
 
 const requiredGitleaksVersion = "8.30.1"
 
+const bundledGitleaksPath = "/usr/local/leakbolt/bin/gitleaks"
+
 type Finding struct {
 	RuleID string `json:"RuleID"`
 	File   string `json:"File"`
@@ -80,7 +82,7 @@ func runGitleaks(repo string, stderr io.Writer, args ...string) ([]Finding, erro
 }
 
 func gitleaksPathAndVersion() (string, string, error) {
-	path, err := exec.LookPath("gitleaks")
+	path, err := findGitleaksPath(bundledGitleaksPath)
 	if err != nil {
 		return "", "", &MissingGitleaksError{}
 	}
@@ -94,6 +96,13 @@ func gitleaksPathAndVersion() (string, string, error) {
 		return path, "", fmt.Errorf("gitleaks version 沒有輸出版本字串")
 	}
 	return path, version, nil
+}
+
+func findGitleaksPath(bundledPath string) (string, error) {
+	if path, err := exec.LookPath(bundledPath); err == nil {
+		return path, nil
+	}
+	return exec.LookPath("gitleaks")
 }
 
 func parseFindings(data []byte) ([]Finding, error) {

@@ -1,0 +1,39 @@
+#!/bin/sh
+set -u
+
+log_message() {
+	message="LeakBolt：$1"
+	/usr/bin/logger -t LeakBoltInstaller "$message" 2>/dev/null || true
+	printf '%s\n' "$message" >&2
+}
+
+console_user=$(/usr/bin/stat -f '%Su' /dev/console 2>/dev/null || true)
+case "$console_user" in
+	""|root|loginwindow|_mbsetupuser)
+		log_message "自動開啟全域保護失敗：找不到目前登入的使用者。可由使用者執行 leakbolt install --global。"
+		exit 0
+		;;
+esac
+
+console_uid=$(/usr/bin/id -u "$console_user" 2>/dev/null || true)
+console_home=$(/usr/bin/dscl . -read "/Users/$console_user" NFSHomeDirectory 2>/dev/null | /usr/bin/sed 's/^NFSHomeDirectory: //' || true)
+if [ -z "$console_uid" ] || [ -z "$console_home" ]; then
+	log_message "自動開啟全域保護失敗：無法取得 $console_user 的帳號資料。可由使用者執行 leakbolt install --global。"
+	exit 0
+fi
+
+install_output=$(
+	/bin/launchctl asuser "$console_uid" /usr/bin/sudo -u "$console_user" \
+		/usr/bin/env HOME="$console_home" USER="$console_user" LOGNAME="$console_user" \
+		PATH="/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" \
+		/usr/local/bin/leakbolt install --global 2>&1
+)
+install_status=$?
+
+if [ "$install_status" -eq 0 ]; then
+	log_message "已替 $console_user 開啟全域保護。$install_output"
+else
+	log_message "自動開啟全域保護失敗（狀態 $install_status）：$install_output。可由使用者執行 leakbolt install --global。"
+fi
+
+exit 0
