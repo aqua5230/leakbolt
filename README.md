@@ -22,10 +22,11 @@ LeakBolt 是一個命令列工具，幫你在 git commit 之前擋下不小心�
 
 ## 安裝
 
-目前沒有 Homebrew 或任何套件管理器可以安裝，現行提供兩種管道：
+目前沒有 Homebrew 或任何套件管理器可以安裝，也還沒有發布頁可以下載預編譯檔。
+唯一的安裝方式是自行編譯：
 
-1. **自行編譯**：需要 Go 1.21 或更新版本，執行 `cd prototype && go build -o leakbolt .`，然後將 `leakbolt` 放進 PATH。
-2. **預編譯檔**：使用 repo 內 `dist/` 的預編譯檔（目前只有 macOS 與 Windows）。
+需要 Go 1.21 或更新版本，執行 `cd prototype && go build -o leakbolt .`，
+然後將 `leakbolt` 放進 PATH。
 
 ### macOS Gatekeeper 警告
 若執行檔是從網路下載或他人傳送，macOS 會因為缺乏 Apple 簽章而阻擋執行，顯示「Apple 無法驗證…是否為惡意軟體」且沒有「打開」選項。解法二選一：
