@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -50,6 +51,20 @@ func recordInstallation(repo, hookKind string) error {
 
 func runDoctor(repo string, stdout io.Writer) int {
 	fmt.Fprintln(stdout, versionString())
+	globalDir, globalErr := globalHooksDirectory()
+	if globalErr != nil {
+		fmt.Fprintf(stdout, "保護模式：異常（%v）\n", globalErr)
+		return 2
+	}
+	globalValue, globalSet, configErr := gitConfig(repo, "global")
+	if configErr != nil {
+		fmt.Fprintf(stdout, "保護模式：異常（%v）\n", configErr)
+		return 2
+	}
+	if globalSet && sameHooksPath(globalValue, globalDir) {
+		return runGlobalDoctor(repo, globalDir, stdout)
+	}
+	fmt.Fprintln(stdout, "保護模式：單一 repo 模式")
 	state, err := loadState(repo)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -159,6 +174,69 @@ func runDoctor(repo string, stdout io.Writer) int {
 
 	if !ok {
 		fmt.Fprintln(stdout, "建議：leakbolt install")
+		return 1
+	}
+	return 0
+}
+
+func runGlobalDoctor(repo, globalDir string, stdout io.Writer) int {
+	fmt.Fprintln(stdout, "保護模式：全域模式")
+	fmt.Fprintln(stdout, "core.hooksPath (global)：正常")
+	ok := true
+	hookPath := filepath.Join(globalDir, "pre-commit")
+	effectivePath, reachable := verifyHookReachable(repo)
+	if reachable && sameHooksPath(effectivePath, hookPath) {
+		fmt.Fprintln(stdout, "hook 可達性：正常")
+	} else {
+		fmt.Fprintln(stdout, "hook 可達性：異常（git 找不到全域的可執行 pre-commit）")
+		ok = false
+	}
+	data, err := os.ReadFile(hookPath)
+	if err == nil && strings.Contains(string(data), "leakbolt scan --staged") && strings.Contains(string(data), "repo_hook") {
+		fmt.Fprintln(stdout, "hook 守衛：正常")
+	} else {
+		fmt.Fprintln(stdout, "hook 守衛：異常（hook 可能已被覆寫）")
+		ok = false
+	}
+
+	leakboltEnabled, _, configErr := gitConfigBool(repo, "hooks.leakbolt")
+	switch {
+	case configErr != nil:
+		fmt.Fprintf(stdout, "LeakBolt 啟用狀態：異常（%v）\n", configErr)
+		ok = false
+	case leakboltEnabled == "false":
+		fmt.Fprintln(stdout, "LeakBolt 啟用狀態：異常（已由 git config hooks.leakbolt false 停用，commit 不會被檢查）")
+		fmt.Fprintln(stdout, "  要恢復檢查：git config --unset hooks.leakbolt")
+		ok = false
+	default:
+		fmt.Fprintln(stdout, "LeakBolt 啟用狀態：正常")
+	}
+
+	if path, pathErr := exec.LookPath("leakbolt"); pathErr == nil {
+		fmt.Fprintf(stdout, "leakbolt 執行檔：正常（%s）\n", path)
+	} else {
+		fmt.Fprintln(stdout, "leakbolt 執行檔：異常（PATH 上找不到 leakbolt，hook 會擋下所有 commit）")
+		ok = false
+	}
+
+	_, version, versionErr := gitleaksPathAndVersion()
+	var missingGitleaks *MissingGitleaksError
+	switch {
+	case errors.As(versionErr, &missingGitleaks):
+		fmt.Fprintln(stdout, "gitleaks 版本：異常（找不到 gitleaks）")
+		ok = false
+	case versionErr != nil:
+		fmt.Fprintf(stdout, "gitleaks 版本：異常（無法查詢版本：%v）\n", versionErr)
+		ok = false
+	case version != requiredGitleaksVersion:
+		fmt.Fprintf(stdout, "gitleaks 版本：異常（找到 %s，預期 %s）\n", version, requiredGitleaksVersion)
+		ok = false
+	default:
+		fmt.Fprintln(stdout, "gitleaks 版本：正常")
+	}
+
+	if !ok {
+		fmt.Fprintln(stdout, "建議：leakbolt install --global")
 		return 1
 	}
 	return 0

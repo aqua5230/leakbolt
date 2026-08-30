@@ -38,6 +38,77 @@ func hookGuard(versionControlled bool) string {
 		"fi\n"
 }
 
+func globalHooksDirectory() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("找不到使用者家目錄：%w", err)
+	}
+	return filepath.Join(home, ".leakbolt", "hooks"), nil
+}
+
+func sameHooksPath(left, right string) bool {
+	return filepath.Clean(left) == filepath.Clean(right)
+}
+
+func globalHookContent() string {
+	return "#!/bin/sh\n" +
+		"git_common_dir=\"$(git rev-parse --git-common-dir 2>/dev/null)\" || exit 1\n" +
+		"repo_hook=\"$git_common_dir/hooks/pre-commit\"\n" +
+		"if [ -x \"$repo_hook\" ]; then\n" +
+		"  \"$repo_hook\" \"$@\" || exit $?\n" +
+		"fi\n" +
+		"# Added by LeakBolt\n" + hookGuard(false)
+}
+
+func installGlobalHook() (string, error) {
+	dir, err := globalHooksDirectory()
+	if err != nil {
+		return "", err
+	}
+	value, set, err := gitConfig("", "global")
+	if err != nil {
+		return "", err
+	}
+	if set && !sameHooksPath(value, dir) {
+		return "", &HooksPathOccupiedError{Scope: "global", Value: value}
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	if err := os.Chmod(dir, 0o755); err != nil {
+		return "", err
+	}
+	hookPath := filepath.Join(dir, "pre-commit")
+	if err := os.WriteFile(hookPath, []byte(globalHookContent()), 0o755); err != nil {
+		return "", err
+	}
+	if err := os.Chmod(hookPath, 0o755); err != nil {
+		return "", err
+	}
+	if err := setGlobalHooksPath(dir); err != nil {
+		return "", err
+	}
+	return hookPath, nil
+}
+
+func uninstallGlobalHook() (string, error) {
+	dir, err := globalHooksDirectory()
+	if err != nil {
+		return "", err
+	}
+	value, set, err := gitConfig("", "global")
+	if err != nil {
+		return "", err
+	}
+	if !set || !sameHooksPath(value, dir) {
+		return value, &HooksPathOccupiedError{Scope: "global", Value: value}
+	}
+	if err := unsetGlobalHooksPath(); err != nil {
+		return "", err
+	}
+	return dir, nil
+}
+
 type hookTarget struct {
 	Path              string
 	Kind              string

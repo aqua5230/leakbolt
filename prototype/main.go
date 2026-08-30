@@ -26,6 +26,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 	switch args[0] {
 	case "install":
 		return runInstall(args[1:], stdout, stderr)
+	case "uninstall":
+		return runUninstall(args[1:], stdout, stderr)
 	case "scan":
 		return runScanCommand(args[1:], stdout, stderr)
 	case "allow":
@@ -45,7 +47,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "用法：")
-	fmt.Fprintln(w, "  leakbolt install [--local-only]")
+	fmt.Fprintln(w, "  leakbolt install [--local-only | --global]")
+	fmt.Fprintln(w, "  leakbolt uninstall --global")
 	fmt.Fprintln(w, "  leakbolt scan --staged")
 	fmt.Fprintln(w, "  leakbolt scan --history")
 	fmt.Fprintln(w, "  leakbolt allow <指紋前綴>")
@@ -58,11 +61,32 @@ func runInstall(args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("install", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	localOnly := flags.Bool("local-only", false, "強制寫入 .git/hooks/pre-commit")
+	global := flags.Bool("global", false, "保護這台機器上所有 repo")
 	if err := flags.Parse(args); err != nil || flags.NArg() != 0 {
 		if err == nil {
 			fmt.Fprintln(stderr, "install 不接受位置參數")
 		}
 		return 2
+	}
+	if *localOnly && *global {
+		fmt.Fprintln(stderr, "install 的 --local-only 與 --global 不能同時使用")
+		return 2
+	}
+	if *global {
+		path, err := installGlobalHook()
+		if err != nil {
+			var occupied *HooksPathOccupiedError
+			if errors.As(err, &occupied) {
+				fmt.Fprintf(stderr, "安裝失敗：git config --global core.hooksPath 目前是 %q，已被其他工具使用；LeakBolt 不會覆寫。請自行處理衝突後重試。\n", occupied.Value)
+				return 2
+			}
+			fmt.Fprintf(stderr, "安裝失敗：%v\n", err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "已安裝到 %s。\n", path)
+		fmt.Fprintln(stdout, "這台機器上所有 repo（包含之後新建的）都會受 LeakBolt 保護。")
+		fmt.Fprintln(stdout, "要解除：leakbolt uninstall --global")
+		return 0
 	}
 
 	repo, err := gitRepositoryRoot("")
@@ -115,6 +139,35 @@ func runInstall(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
+func runUninstall(args []string, stdout, stderr io.Writer) int {
+	flags := flag.NewFlagSet("uninstall", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	global := flags.Bool("global", false, "解除全域保護")
+	if err := flags.Parse(args); err != nil || flags.NArg() != 0 || !*global {
+		if err == nil {
+			fmt.Fprintln(stderr, "用法：leakbolt uninstall --global")
+		}
+		return 2
+	}
+
+	dir, err := uninstallGlobalHook()
+	if err != nil {
+		var occupied *HooksPathOccupiedError
+		if errors.As(err, &occupied) {
+			if occupied.Value == "" {
+				fmt.Fprintln(stderr, "解除失敗：git config --global core.hooksPath 未指向 LeakBolt；未變更任何設定。")
+			} else {
+				fmt.Fprintf(stderr, "解除失敗：git config --global core.hooksPath 目前是 %q，不是 LeakBolt 的目錄；未變更任何設定。\n", occupied.Value)
+			}
+			return 2
+		}
+		fmt.Fprintf(stderr, "解除失敗：%v\n", err)
+		return 2
+	}
+	fmt.Fprintf(stdout, "已解除全域保護（%s 內的 hook 檔案仍保留）。\n", dir)
+	return 0
+}
+
 func runScanCommand(args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("scan", flag.ContinueOnError)
 	flags.SetOutput(stderr)
@@ -138,25 +191,7 @@ func runScanCommand(args []string, stdout, stderr io.Writer) int {
 		if err != nil {
 			return reportScanError(stderr, err)
 		}
-		state, err := loadOrCreateState(repo)
-		if err != nil {
-			fmt.Fprintf(stderr, "讀取本機狀態失敗：%v\n", err)
-			return 2
-		}
-		visible, err := prepareStagedFindings(state, findings)
-		if err != nil {
-			fmt.Fprintf(stderr, "處理掃描結果失敗：%v\n", err)
-			return 2
-		}
-		if err := writeState(repo, state); err != nil {
-			fmt.Fprintf(stderr, "寫入本機狀態失敗：%v\n", err)
-			return 2
-		}
-		printStagedSummary(stdout, visible, len(findings))
-		if len(visible) > 0 {
-			return 1
-		}
-		return 0
+		return finishStagedScan(repo, findings, stdout, stderr)
 	}
 
 	findings, err := scanHistory(repo, stderr)
@@ -165,6 +200,29 @@ func runScanCommand(args []string, stdout, stderr io.Writer) int {
 	}
 	printHistorySummary(stdout, findings)
 	if len(findings) > 0 {
+		return 1
+	}
+	return 0
+}
+
+func finishStagedScan(repo string, findings []Finding, stdout, stderr io.Writer) int {
+	state, err := loadOrCreateState(repo)
+	if err != nil {
+		fmt.Fprintf(stderr, "讀取本機狀態失敗：%v\n", err)
+		return 2
+	}
+	visible, err := prepareStagedFindings(state, findings)
+	if err != nil {
+		fmt.Fprintf(stderr, "處理掃描結果失敗：%v\n", err)
+		return 2
+	}
+	if err := writeState(repo, state); err != nil {
+		fmt.Fprintf(stderr, "寫入本機狀態失敗：%v\n", err)
+		return 2
+	}
+	printStagedSummary(stdout, visible, len(findings))
+	if len(visible) > 0 {
+		notifyBlockedCommit(repo, visible, stdout)
 		return 1
 	}
 	return 0
