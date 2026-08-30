@@ -8,8 +8,8 @@
 
 ## Deviations
 
-- 已解決：Go 1.27 現在無需設定 `GO111MODULE`，可直接執行 `go build ./...`、
-  `go vet ./...`、`go test ./...`。
+- Go 1.27 可直接執行 `go build ./...`、`go vet ./...`、`go test ./...`，
+  不需設定 `GO111MODULE=off`。
 - `core.hooksPath` 原文可能是檔案路徑，與 state.json 禁止存路徑衝突；現況以 salt 加碼
   HMAC-SHA256 摘要記錄，doctor 比較摘要，不保存原文。
 - 規格未定義「找到 gitleaks，但 `gitleaks version` 執行失敗或輸出空白」；採保守處理：

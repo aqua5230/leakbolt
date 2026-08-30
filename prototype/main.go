@@ -14,6 +14,10 @@ func main() {
 }
 
 func run(args []string, stdout, stderr io.Writer) int {
+	if len(args) == 1 && (args[0] == "--version" || args[0] == "-v" || args[0] == "version") {
+		fmt.Fprintln(stdout, versionString())
+		return 0
+	}
 	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" || args[0] == "help" {
 		printUsage(stdout)
 		return 0

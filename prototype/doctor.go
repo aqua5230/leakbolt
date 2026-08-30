@@ -49,6 +49,7 @@ func recordInstallation(repo, hookKind string) error {
 }
 
 func runDoctor(repo string, stdout io.Writer) int {
+	fmt.Fprintln(stdout, versionString())
 	state, err := loadState(repo)
 	if err != nil {
 		if os.IsNotExist(err) {

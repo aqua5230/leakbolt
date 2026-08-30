@@ -62,16 +62,19 @@ func runGitleaks(repo string, stderr io.Writer, args ...string) ([]Finding, erro
 	cmd.Stdout = &stdout
 	cmd.Stderr = &commandStderr
 	runErr := cmd.Run()
+	if len(bytes.TrimSpace(stdout.Bytes())) == 0 {
+		message := strings.TrimSpace(commandStderr.String())
+		if message == "" && runErr != nil {
+			message = runErr.Error()
+		}
+		if message == "" {
+			message = "gitleaks 未輸出 JSON 報告"
+		}
+		return nil, fmt.Errorf("gitleaks 執行失敗：%s", message)
+	}
 	findings, parseErr := parseFindings(stdout.Bytes())
 	if parseErr == nil {
 		return findings, nil
-	}
-	if runErr != nil {
-		message := strings.TrimSpace(commandStderr.String())
-		if message == "" {
-			message = runErr.Error()
-		}
-		return nil, fmt.Errorf("gitleaks 執行失敗：%s", message)
 	}
 	return nil, parseErr
 }

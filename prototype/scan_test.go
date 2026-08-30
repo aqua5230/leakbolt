@@ -39,6 +39,45 @@ func TestRunGitleaksWarnsOnVersionMismatchAndContinues(t *testing.T) {
 	}
 }
 
+func TestRunGitleaksFailsWhenStdoutIsEmpty(t *testing.T) {
+	repo := useFakeGitleaksScript(t, "printf 'Error: unknown command\\n' >&2\nexit 1\n")
+	var stderr bytes.Buffer
+	findings, err := runGitleaks(repo, &stderr, "detect", "--report-format", "json", "--report-path", "-")
+	if err == nil {
+		t.Fatal("stdout 為空時應回傳錯誤")
+	}
+	if findings != nil {
+		t.Fatalf("findings = %#v, want nil", findings)
+	}
+	if !strings.Contains(err.Error(), "Error: unknown command") {
+		t.Fatalf("錯誤 = %q，應包含 gitleaks stderr", err)
+	}
+}
+
+func TestRunGitleaksAcceptsFindingsWhenExitCodeIsOne(t *testing.T) {
+	repo := useFakeGitleaksScript(t, "printf '[{\"RuleID\":\"aws-access-token\",\"File\":\"secret.txt\",\"Secret\":\"AKIAIMNOJVGFDXXXE4OA\"}]\\n'\nexit 1\n")
+	var stderr bytes.Buffer
+	findings, err := runGitleaks(repo, &stderr, "detect", "--report-format", "json", "--report-path", "-")
+	if err != nil {
+		t.Fatalf("有 JSON findings 時不應因 exit 1 失敗：%v", err)
+	}
+	if len(findings) != 1 || findings[0].Secret != "AKIAIMNOJVGFDXXXE4OA" {
+		t.Fatalf("findings = %#v, want one finding", findings)
+	}
+}
+
+func TestRunGitleaksAcceptsCleanReport(t *testing.T) {
+	repo := useFakeGitleaksScript(t, "printf '[]\\n'\nexit 0\n")
+	var stderr bytes.Buffer
+	findings, err := runGitleaks(repo, &stderr, "detect", "--report-format", "json", "--report-path", "-")
+	if err != nil {
+		t.Fatalf("乾淨報告不應失敗：%v", err)
+	}
+	if len(findings) != 0 {
+		t.Fatalf("findings = %#v, want empty", findings)
+	}
+}
+
 func useFakeGitleaks(t *testing.T, version string) (string, string) {
 	t.Helper()
 	if runtime.GOOS == "windows" {
@@ -61,4 +100,23 @@ func useFakeGitleaks(t *testing.T, version string) (string, string) {
 	t.Setenv("LEAKBOLT_VERSION_LOG", versionLog)
 	t.Setenv("LEAKBOLT_FAKE_VERSION", version)
 	return t.TempDir(), versionLog
+}
+
+func useFakeGitleaksScript(t *testing.T, command string) string {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("測試使用 POSIX shell 假執行檔")
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gitleaks")
+	script := "#!/bin/sh\n" +
+		"if [ \"$1\" = version ]; then\n" +
+		"  printf '8.30.1\\n'\n" +
+		"  exit 0\n" +
+		"fi\n" + command
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+	return t.TempDir()
 }
