@@ -2,6 +2,7 @@
 dist/*.exe
 dist/leakbolt-darwin-*
 dist/SHA256SUMS-darwin.txt
+dist/SHA256SUMS-windows.txt
 dist/*.pkg
 
 # Go
