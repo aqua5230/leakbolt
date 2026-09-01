@@ -2,6 +2,8 @@
 
 在 git commit 之前自動攔截並防範 API 金鑰與密鑰外洩。
 
+![LeakBolt 攔截 commit 裡的 AWS 金鑰示範](docs/demo.gif)
+
 ## 這是什麼／解決什麼問題
 
 LeakBolt 幫你在 git commit 之前擋下不小心寫進程式碼的 API 金鑰與密鑰。裝一次，這台機器上所有 repo（包含之後新建的）都受保護。
