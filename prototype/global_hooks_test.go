@@ -14,6 +14,7 @@ func isolateGlobalGitConfig(t *testing.T) string {
 	t.Helper()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	t.Setenv("GIT_CONFIG_GLOBAL", filepath.Join(home, "global.gitconfig"))
 	t.Setenv("GIT_CONFIG_SYSTEM", filepath.Join(home, "system.gitconfig"))
 	return home
@@ -31,7 +32,7 @@ func TestGlobalHookChainsFailingRepositoryHook(t *testing.T) {
 		t.Fatal(err)
 	}
 	globalHook := filepath.Join(home, ".leakbolt", "hooks", "pre-commit")
-	direct := exec.Command(globalHook)
+	direct := exec.Command(shInterpreter, globalHook)
 	direct.Dir = repo
 	directOutput, directErr := direct.CombinedOutput()
 	var directExitErr *exec.ExitError
