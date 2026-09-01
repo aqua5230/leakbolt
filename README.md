@@ -117,7 +117,7 @@ macOS 上 commit 被擋時，除了既有的終端機輸出，會額外跳出原
 
 - **macOS**：相容矩陣 11/11 通過，有預編譯檔與 `.pkg` 安裝檔（未簽章）。視窗提示僅在 macOS 上運作。
 - **Linux**：相容矩陣 11/11 通過，但**沒有預編譯檔**，要自己編。無視窗提示。
-- **Windows**：**完全沒有實機驗證過**。`dist/` 裡有 Windows 執行檔，但沒有人在 Windows 上跑過。
+- **Windows**：真實 Windows + Git Bash 上 `go test ./...` 全數通過（7 個 POSIX-only 測試依設計 SKIP），並已驗證 install、scan、密鑰攔截基本流程與 `install --global` hook 串接。完整 `scripts/windows_matrix.ps1` 相容矩陣及 husky/lefthook/pre-commit 整合情境尚未測試。
 
 ## 已知限制
 

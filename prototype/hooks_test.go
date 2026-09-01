@@ -11,6 +11,29 @@ import (
 	"testing"
 )
 
+var shInterpreter = func() string {
+	path, err := exec.LookPath("sh")
+	if err != nil {
+		return "/bin/sh"
+	}
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return path
+	}
+	return absPath
+}()
+
+var restrictedPATHWithoutLeakbolt = func() string {
+	if runtime.GOOS != "windows" {
+		return "/usr/bin:/bin"
+	}
+	gitPath, err := exec.LookPath("git")
+	if err != nil {
+		return "/usr/bin:/bin"
+	}
+	return filepath.Dir(gitPath)
+}()
+
 func TestDetectHookTarget(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -253,7 +276,7 @@ func TestUnversionedHookBlocksWhenLeakboltMissing(t *testing.T) {
 func TestUnversionedHookAllowsDisabledLeakboltWhenBinaryMissing(t *testing.T) {
 	repo := testGitRepo(t)
 	mustRunGit(t, repo, "config", "hooks.leakbolt", "false")
-	t.Setenv("PATH", "/usr/bin:/bin")
+	t.Setenv("PATH", restrictedPATHWithoutLeakbolt)
 	path := filepath.Join(repo, ".git", "hooks", "pre-commit")
 	if err := writeHookTarget(hookTarget{Path: path, Kind: "script"}); err != nil {
 		t.Fatal(err)
@@ -280,7 +303,7 @@ func TestUnversionedHookAllowsDisabledLeakboltWhenBinaryMissing(t *testing.T) {
 func TestVersionControlledHookAllowsDisabledLeakboltWhenBinaryMissing(t *testing.T) {
 	repo := testGitRepo(t)
 	mustRunGit(t, repo, "config", "hooks.leakbolt", "false")
-	t.Setenv("PATH", "/usr/bin:/bin")
+	t.Setenv("PATH", restrictedPATHWithoutLeakbolt)
 	path := filepath.Join(repo, ".husky", "pre-commit")
 	if err := writeHookTarget(hookTarget{Path: path, Kind: "script", VersionControlled: true}); err != nil {
 		t.Fatal(err)
@@ -318,7 +341,7 @@ func TestUnversionedHookMissingLeakboltReportsPATH(t *testing.T) {
 func TestVersionControlledHookAllowsMissingLeakboltWithoutState(t *testing.T) {
 	repo := testGitRepo(t)
 	mustRunGit(t, repo, "config", "hooks.leakbolt", "true")
-	t.Setenv("PATH", "/usr/bin:/bin")
+	t.Setenv("PATH", restrictedPATHWithoutLeakbolt)
 	path := filepath.Join(repo, ".husky", "pre-commit")
 	if err := writeHookTarget(hookTarget{Path: path, Kind: "script", VersionControlled: true}); err != nil {
 		t.Fatal(err)
@@ -336,7 +359,7 @@ func TestVersionControlledHookAllowsMissingLeakboltWithoutState(t *testing.T) {
 func TestVersionControlledHookBlocksMissingLeakboltWithState(t *testing.T) {
 	repo := testGitRepo(t)
 	mustRunGit(t, repo, "config", "hooks.leakbolt", "true")
-	t.Setenv("PATH", "/usr/bin:/bin")
+	t.Setenv("PATH", restrictedPATHWithoutLeakbolt)
 	path := filepath.Join(repo, ".husky", "pre-commit")
 	if err := writeHookTarget(hookTarget{Path: path, Kind: "script", VersionControlled: true}); err != nil {
 		t.Fatal(err)
@@ -354,7 +377,7 @@ func TestVersionControlledHookBlocksMissingLeakboltWithState(t *testing.T) {
 }
 
 func runHookWithSh(repo, path string) (string, error) {
-	cmd := exec.Command("/bin/sh", path)
+	cmd := exec.Command(shInterpreter, path)
 	cmd.Dir = repo
 	var stderr strings.Builder
 	cmd.Stderr = &stderr

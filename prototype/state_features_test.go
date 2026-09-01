@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -55,6 +56,13 @@ func TestStateNeverStoresRawSecret(t *testing.T) {
 	info, err := os.Stat(statePath(repo))
 	if err != nil {
 		t.Fatal(err)
+	}
+	if runtime.GOOS == "windows" {
+		// Windows 的 os.Chmod 只能切換唯讀屬性，無法設定 POSIX 0600。
+		if !info.Mode().IsRegular() {
+			t.Fatalf("state.json 必須是一般檔案，mode = %v", info.Mode())
+		}
+		return
 	}
 	if info.Mode().Perm() != 0o600 {
 		t.Fatalf("state.json 權限 = %o，want 0600", info.Mode().Perm())
