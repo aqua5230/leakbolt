@@ -26,9 +26,17 @@ LeakBolt 幫你在 git commit 之前擋下不小心寫進程式碼的 API 金鑰
 
 ## 安裝
 
-### 方式一：`.pkg` 安裝檔（不用開終端機）
+### 方式一：Homebrew（推薦，開發者最少摩擦）
 
-用 `sh scripts/build_pkg.sh` 產生 `dist/LeakBolt-<版本>.pkg`，內含 leakbolt 與 gitleaks，兩者都是 universal binary，Intel 與 Apple Silicon 共用同一個檔案。
+```
+brew install aqua5230/leakbolt/leakbolt
+```
+
+會自動裝好 leakbolt 本體，並透過 `depends_on` 一併裝好 gitleaks，不會跳 Gatekeeper 警告。裝完後執行 `leakbolt install --global` 開啟全機保護（Homebrew 版不會自動開啟，需手動執行一次）。
+
+### 方式二：`.pkg` 安裝檔（不用開終端機）
+
+到 [Releases 頁面](https://github.com/aqua5230/leakbolt/releases/latest) 下載 `LeakBolt-<版本>.pkg`，內含 leakbolt 與 gitleaks，兩者都是 universal binary，Intel 與 Apple Silicon 共用同一個檔案。也可以自行執行 `sh scripts/build_pkg.sh` 本機產生。
 
 安裝檔會做三件事：把 `leakbolt` 放進 `/usr/local/bin`、把 gitleaks 放進 `/usr/local/leakbolt/bin`、以目前登入的使用者身分執行 `leakbolt install --global` 開啟全機保護。
 
@@ -36,11 +44,9 @@ LeakBolt 幫你在 git commit 之前擋下不小心寫進程式碼的 API 金鑰
 
 解除安裝：`sudo sh /usr/local/leakbolt/uninstall.sh`。
 
-### 方式二：自行編譯
+### 方式三：自行編譯
 
-需要 Go 1.21 或更新版本，執行 `cd prototype && go build -o leakbolt .`，然後將 `leakbolt` 放進 PATH。
-
-目前沒有 Homebrew 或任何套件管理器可以安裝，也還沒有發布頁可以下載預編譯檔。
+需要 Go 1.21 或更新版本，執行 `cd prototype && go build -o leakbolt .`，然後將 `leakbolt` 放進 PATH。也可以到 [Releases 頁面](https://github.com/aqua5230/leakbolt/releases/latest) 直接下載對應平台的預編譯執行檔。
 
 ### macOS Gatekeeper 警告
 若執行檔或安裝檔是從瀏覽器下載或他人傳送，macOS 會因為缺乏 Apple 簽章而阻擋執行，顯示「Apple 無法驗證…是否為惡意軟體」。用 `curl` 下載則不會被貼隔離標記，不會出現此警告。解法三選一：
