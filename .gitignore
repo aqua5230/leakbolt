@@ -4,6 +4,7 @@ dist/leakbolt-darwin-*
 dist/SHA256SUMS-darwin.txt
 dist/SHA256SUMS-windows.txt
 dist/*.pkg
+dist/SHA256SUMS-pkg.txt
 
 # Go
 coverage.out
