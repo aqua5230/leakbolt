@@ -1,5 +1,8 @@
 # LeakBolt
 
+[![CI](https://github.com/aqua5230/leakbolt/actions/workflows/ci.yml/badge.svg)](https://github.com/aqua5230/leakbolt/actions/workflows/ci.yml)
+[![授權](https://img.shields.io/badge/授權-MIT-blue.svg)](LICENSE)
+
 在 git commit 之前自動攔截並防範 API 金鑰與密鑰外洩。
 
 ![LeakBolt 攔截 commit 裡的 AWS 金鑰示範](docs/demo.gif)
@@ -164,6 +167,14 @@ git 的 `core.hooksPath` 是單一值，設了就完全取代原本的 hook 目�
 4. **`scan --history` 在大型 repo 上很慢。** 在 `golang/go` 的 4215 個 commit 上實測 53～56 秒（Apple Silicon）。`install` 會跑一次這個掃描，所以大型 repo 的安裝會等上將近一分鐘。相對地 `scan --staged`（每次 commit 實際跑的那個）實測 0.2～0.3 秒，日常 commit 感覺不到延遲。
 5. **誤報記錄只存規則 ID 與不可逆指紋**，不存原始命中內容。
 6. **真實 repo 仍會有誤報。** 實測 5 個公開專案的完整歷史：`gin-gonic/gin` 4 筆、`caddyserver/caddy` 5 筆、`golang/go` 257 筆，`expressjs/express`、`sharkdp/bat`、`junegunn/fzf` 各 0 筆——命中的全部是測試資產，真洩漏 0 筆。加入測試路徑濾除後，gin 降到 0 筆、golang/go 降到 23 筆（剩下的是密碼學實作檔裡的高熵常數，不在測試路徑上）。也就是說：誤報變少了，但沒有歸零，這類專案仍需搭配 `leakbolt allow` 使用。
+
+## 回報安全問題
+
+發現漏洞請走 [私密回報](https://github.com/aqua5230/leakbolt/security/advisories/new)，不要開公開 issue。哪些算漏洞、哪些是已知的設計限制，見 [`SECURITY.md`](SECURITY.md)。
+
+## 變更紀錄
+
+見 [`CHANGELOG.md`](CHANGELOG.md)。
 
 ## 授權
 

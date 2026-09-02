@@ -1,0 +1,108 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  # 與 prototype/scan.go 的 requiredGitleaksVersion 同一個值。
+  # 改版本時兩邊都要動，quality gate 會因為版本不符而印警告。
+  GITLEAKS_VERSION: 8.30.1
+
+jobs:
+  test:
+    # 三平台都跑：hook 是 shell script，Windows 靠 Git Bash 執行，
+    # 過去修過 go test 在 Windows 上跑不動的問題，這裡要擋住回歸。
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: prototype/go.mod
+
+      - name: gofmt
+        if: matrix.os != 'windows-latest'
+        working-directory: prototype
+        run: |
+          # corpus/ 下是刻意保持原樣的語料庫夾具，不納入格式檢查。
+          unformatted=$(gofmt -l . | grep -v '^corpus/' || true)
+          if [ -n "$unformatted" ]; then
+            echo "以下檔案未格式化，請執行 gofmt -w：" >&2
+            echo "$unformatted" >&2
+            exit 1
+          fi
+
+      - name: go vet
+        working-directory: prototype
+        run: go vet ./...
+
+      # 測試用假 gitleaks 腳本，不需要真的裝 gitleaks。
+      - name: go test
+        working-directory: prototype
+        run: go test ./...
+
+  quality-gate:
+    # 偵測品質基準：19 真陽性、21 假陽性，漏報率與誤報率都必須是 0。
+    # 這個要真的 gitleaks，且版本必須與產品鎖定的一致。
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: prototype/go.mod
+
+      - name: 安裝 gitleaks ${{ env.GITLEAKS_VERSION }}
+        run: |
+          set -eu
+          url="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -fsSL "$url" -o /tmp/gitleaks.tar.gz
+          tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
+          sudo install -m 0755 /tmp/gitleaks /usr/local/bin/gitleaks
+          installed=$(gitleaks version)
+          if [ "$installed" != "$GITLEAKS_VERSION" ]; then
+            echo "gitleaks 版本不符：裝到 $installed，預期 $GITLEAKS_VERSION" >&2
+            exit 1
+          fi
+
+      - name: quality gate
+        run: sh scripts/quality_gate.sh
+
+  build:
+    # 確認發布目標平台都編得出來。不上傳產物——release 走 scripts/release_*.sh。
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goos: darwin
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
+          - goos: linux
+            goarch: amd64
+          - goos: windows
+            goarch: amd64
+          - goos: windows
+            goarch: arm64
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: prototype/go.mod
+
+      - name: build ${{ matrix.goos }}/${{ matrix.goarch }}
+        working-directory: prototype
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: go build -o /dev/null .
