@@ -323,7 +323,7 @@ func TestVersionControlledHookAllowsDisabledLeakboltWhenBinaryMissing(t *testing
 func TestUnversionedHookMissingLeakboltReportsPATH(t *testing.T) {
 	repo := testGitRepo(t)
 	mustRunGit(t, repo, "config", "hooks.leakbolt", "true")
-	t.Setenv("PATH", "/usr/bin:/bin")
+	t.Setenv("PATH", restrictedPATHWithoutLeakbolt)
 	path := filepath.Join(repo, ".git", "hooks", "pre-commit")
 	if err := writeHookTarget(hookTarget{Path: path, Kind: "script"}); err != nil {
 		t.Fatal(err)
@@ -333,8 +333,10 @@ func TestUnversionedHookMissingLeakboltReportsPATH(t *testing.T) {
 	if err == nil {
 		t.Fatal("leakbolt 不在 PATH 時，不進版控的 hook 應失敗")
 	}
-	if !strings.Contains(stderr, "PATH=/usr/bin:/bin") {
-		t.Fatalf("stderr 未含 PATH：%q", stderr)
+	// 只驗有把 PATH 印出來——Git Bash 會自行補上 /mingw64/bin 之類的路徑，
+	// 比對完整字串在 Windows 上必定失敗，而使用者要的資訊只是「當時的 PATH 是什麼」。
+	if !strings.Contains(stderr, "PATH=") {
+		t.Fatalf("stderr 未印出 PATH：%q", stderr)
 	}
 }
 
