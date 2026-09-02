@@ -160,6 +160,7 @@ func isHuskyHooksPath(repo, value string) bool {
 }
 
 func installHook(repo string, localOnly bool) (installResult, error) {
+	globalDir, globalDirErr := globalHooksDirectory()
 	for _, scope := range []string{"local", "global", "system"} {
 		value, set, err := gitConfig(repo, scope)
 		if err != nil {
@@ -172,6 +173,12 @@ func installHook(repo string, localOnly bool) (installResult, error) {
 			continue
 		}
 		if isHuskyHooksPath(repo, value) {
+			continue
+		}
+		// 全機保護開著時，global 指向的就是 LeakBolt 自己，不是別人的佔用。
+		// 這條路徑是 husky 蓋掉全域保護後的復原動作：doctor 會叫使用者跑
+		// leakbolt install，這裡若把自己判成佔用就會拒裝，使用者照做卻什麼也沒發生。
+		if scope == "global" && globalDirErr == nil && sameHooksPath(value, globalDir) {
 			continue
 		}
 		return installResult{}, &HooksPathOccupiedError{Scope: scope, Value: value}

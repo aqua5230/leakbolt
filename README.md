@@ -6,7 +6,7 @@
 
 ## 這是什麼／解決什麼問題
 
-LeakBolt 幫你在 git commit 之前擋下不小心寫進程式碼的 API 金鑰與密鑰。裝一次，這台機器上所有 repo（包含之後新建的）都受保護。
+LeakBolt 幫你在 git commit 之前擋下不小心寫進程式碼的 API 金鑰與密鑰。裝一次，這台機器上所有 repo（包含之後新建的）都受保護——除非某個 repo 用了 husky／lefthook 這類 hook 工具，它們會接管 hook 設定；那種 repo 執行一次 `leakbolt install` 就能讓兩者共存（詳見[與其他 hook 工具共存](#與其他-hook-工具共存)）。
 
 它不自己做偵測——偵測引擎用的是 gitleaks。LeakBolt 做的是 gitleaks 沒做的那一層：一個安裝檔裝好全部（含 gitleaks）、一次設定保護所有 repo、檢查 hook 有沒有失效、擋下時跳原生視窗說明、處理誤報、把誤加進版控的憑證檔移出去。
 
@@ -84,7 +84,7 @@ brew install aqua5230/leakbolt/leakbolt
 版本查詢指令：支援 `leakbolt --version`、`leakbolt -v`、`leakbolt version`，輸出格式如 `leakbolt 0.1.0 (3ba8f46)，鎖定 gitleaks 8.30.1`。
 
 - `install`：在目前 repo 裝上 pre-commit hook，並強制跑一次完整 git 歷史掃描把結果印出來。歷史掃描找到東西時**不會**讓 `install` 回傳非 0——hook 已經裝好了，那些命中是資訊，不是安裝失敗。要取得歷史掃描本身的 exit code 請用 `leakbolt scan --history`。
-- `install --global`：設定 `core.hooksPath` 指向 `~/.leakbolt/hooks`，一次保護這台機器上所有 repo。全域 hook 會先執行該 repo 自己的 `.git/hooks/pre-commit`（若存在且可執行）並傳遞其 exit code，再跑 LeakBolt 檢查，不會靜默停掉既有 hook。若 global `core.hooksPath` 已被其他工具佔用，會拒絕安裝而不覆寫。
+- `install --global`：設定 `core.hooksPath` 指向 `~/.leakbolt/hooks`，一次保護這台機器上所有 repo。全域 hook 會先執行該 repo 自己的 `.git/hooks/pre-commit`（若存在且可執行）並傳遞其 exit code，再跑 LeakBolt 檢查，不會靜默停掉既有 hook。若 global `core.hooksPath` 已被其他工具佔用，會拒絕安裝而不覆寫。用了 husky／lefthook 的 repo 會蓋過這個設定，見[與其他 hook 工具共存](#與其他-hook-工具共存)。
 - `uninstall --global`：解除全域保護。只在 global `core.hooksPath` 確實指向 LeakBolt 時才解除，指向他人設定則拒絕並保留原值。
 - `scan --staged`：掃暫存區（staged，指已 `git add` 但還沒 commit 的內容）。
 - `scan --history`：掃完整 git 歷史。
@@ -126,6 +126,24 @@ macOS 上 commit 被擋時，除了既有的終端機輸出，會額外跳出原
 - **Linux**：相容矩陣 11/11 通過，但**沒有預編譯檔**，要自己編。無視窗提示。
 - **Windows**：真實 Windows + Git Bash 上 `go test ./...` 全數通過（7 個 POSIX-only 測試依設計 SKIP），並已驗證 install、scan、密鑰攔截基本流程與 `install --global` hook 串接。完整 `scripts/windows_matrix.ps1` 相容矩陣及 husky/lefthook/pre-commit 整合情境尚未測試。
 
+## 與其他 hook 工具共存
+
+git 的 `core.hooksPath` 是單一值，設了就完全取代原本的 hook 目錄，不會合併。husky、lefthook、pre-commit 都靠這個設定運作，所以**在同一個 repo 裡，後設定的那個會接管全部**。
+
+實測（2026-09-02，macOS）三種工具的行為：
+
+| 工具 | 在全機保護已開啟時執行它的 install | 後果 |
+|---|---|---|
+| husky v9 | 照裝不誤，設 repo 層級 `core.hooksPath=.husky/_` | **全機保護被蓋掉**，該 repo 的 commit 不再經過 LeakBolt |
+| lefthook 2.1.12 | 不拒裝，印警告並提供 `lefthook install --reset-hooks-path` 選項 | 照那個提示做會**刪掉全域設定**，全機保護整台機器失效 |
+| pre-commit 4.5.1 | 拒裝，回報 `[ERROR] Cowardly refusing to install hooks with core.hooksPath set.` | 保護仍在，但使用者裝不了 pre-commit |
+
+**遇到這些情況怎麼辦**：在那個 repo 執行一次 `leakbolt install`。它會偵測到該工具，把檢查寫進對應的位置（`.husky/pre-commit`、`lefthook.yml`、`.pre-commit-config.yaml`），插在既有指令前面，兩者共存。之後 `leakbolt doctor` 會回報正常。
+
+**怎麼知道自己中了**：執行 `leakbolt doctor`。它會指出是哪一層的設定蓋掉全機保護、該跑什麼指令。但它不會自動執行——裝完 husky／lefthook 之後請主動跑一次。
+
+**已知無解**：`lefthook install --reset-hooks-path` 會直接移除全域 `core.hooksPath`，靜默解除整台機器的保護。git 層沒有辦法攔截，只能事後靠 `leakbolt doctor` 發現。
+
 ## 掃描出錯時的行為
 
 掃描過程出錯一律**中止 commit**（fail-closed），不會因為「掃不動」就放行：
@@ -140,7 +158,7 @@ macOS 上 commit 被擋時，除了既有的終端機輸出，會額外跳出原
 
 1. **hook 擋不住所有路徑。** `git commit --no-verify`、不經 git 的部署、部分 GUI git 客戶端、hook 被其他工具改寫，都能繞過。請把它當**第一層**防護，不是保證。
 
-   特別注意 **repo 層級或 worktree 層級的 `core.hooksPath` 會蓋過全機保護**：`npx husky init` 就會設 repo 層級的值，那個 repo 從此不再經過 LeakBolt。`leakbolt doctor` 會指出是哪一層蓋掉的並給恢復指令，但它不會自動執行——換句話說，除非你主動跑 `doctor`，這個 repo 會安靜地失去防護。裝了 husky／lefthook／pre-commit 之後，建議在該 repo 執行一次 `leakbolt install` 讓兩者共存。
+   特別注意 **repo 層級或 worktree 層級的 `core.hooksPath` 會蓋過全機保護**，而且是靜默的——除非你主動跑 `leakbolt doctor`，不會有任何提示。詳見上面的[與其他 hook 工具共存](#與其他-hook-工具共存)。
 2. **把金鑰搬進 `.env` 不等於修好。** 如果那個金鑰曾經進過 git 歷史，就算搬走也必須去供應商那邊作廢重發。另外某些前端框架會把特定前綴的環境變數編進瀏覽器 bundle。
 3. **規則會過期。** 鎖定 gitleaks 版本能給穩定基線，但新的供應商與新的 key 格式會繼續出現，不更新就會漏報。
 4. **`scan --history` 在大型 repo 上很慢。** 在 `golang/go` 的 4215 個 commit 上實測 53～56 秒（Apple Silicon）。`install` 會跑一次這個掃描，所以大型 repo 的安裝會等上將近一分鐘。相對地 `scan --staged`（每次 commit 實際跑的那個）實測 0.2～0.3 秒，日常 commit 感覺不到延遲。

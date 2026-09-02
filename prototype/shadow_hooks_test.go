@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -54,6 +55,53 @@ func TestGlobalDoctorDetectsShadowedHooksPath(t *testing.T) {
 				t.Errorf("doctor 沒說明防護已失效；輸出：%q", output)
 			}
 		})
+	}
+}
+
+// 被 husky 蓋掉之後跑 leakbolt install，檢查會寫進 .husky/pre-commit，
+// commit 照樣被擋。這時 doctor 必須回報正常——保護還在卻報異常是假警報，
+// 使用者會學會忽略 doctor 的輸出。
+func TestGlobalDoctorAcceptsCoexistenceWithHusky(t *testing.T) {
+	isolateGlobalGitConfig(t)
+	repo := testGitRepo(t)
+	if _, err := installGlobalHook(); err != nil {
+		t.Fatal(err)
+	}
+
+	// 重現 npx husky init 的結果：.husky/_ 轉呼叫殼 + repo-local hooksPath。
+	if err := os.MkdirAll(filepath.Join(repo, ".husky", "_"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	shim := filepath.Join(repo, ".husky", "_", "pre-commit")
+	mustWrite(t, shim, "#!/bin/sh\n. \"${0%/*}/../pre-commit\"\n")
+	if err := os.Chmod(shim, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, filepath.Join(repo, ".husky", "pre-commit"), "npm test\n")
+	mustRunGit(t, repo, "config", "--local", "core.hooksPath", ".husky/_")
+
+	// 共存前：保護確實沒了，doctor 要報異常。
+	var before bytes.Buffer
+	if code := runDoctor(repo, &before); code == 0 {
+		t.Fatalf("husky 蓋掉保護，doctor 卻回報正常；輸出：%q", before.String())
+	}
+
+	// leakbolt install 把檢查寫進 husky 的 hook。
+	if _, err := installHook(repo, false); err != nil {
+		t.Fatalf("被 husky 蓋掉後 install 失敗（應該要能寫進 .husky/pre-commit）：%v", err)
+	}
+
+	var after bytes.Buffer
+	code := runDoctor(repo, &after)
+	output := after.String()
+	if strings.Contains(output, "蓋過全機保護") {
+		t.Errorf("已與 husky 共存，doctor 仍報遮蔽；輸出：%q", output)
+	}
+	if strings.Contains(output, "hook 可達性：異常") {
+		t.Errorf("hook 鏈上有 LeakBolt，可達性卻報異常；輸出：%q", output)
+	}
+	if code != 0 && !strings.Contains(output, "gitleaks") {
+		t.Fatalf("共存狀態 doctor exit = %d，且與 gitleaks 無關；輸出：%q", code, output)
 	}
 }
 

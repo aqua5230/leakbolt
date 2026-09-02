@@ -81,6 +81,35 @@ leakbolt scan --staged || exit 1
 安裝時要明講「這行會進版控、隊友看得到」，並提供 `--local-only` 走不進版控的 `.git/hooks/pre-commit`。
 「正確地跟既有 hook 工具共存」本身就是免費層的賣點——gitleaks 官方沒做這件事。
 
+> **現況違反此決策**（2026-09-02 補記）
+>
+> `.pkg` 的 postinstall 會自動執行 `leakbolt install --global`，也就是實際上碰了全域
+> `core.hooksPath`，與上面「不碰全域」的決定相反。README 據此對外承諾「裝一次，這台機器上
+> 所有 repo 都受保護」。這條決策不刪除，因為它指出的風險是真的——以下是 2026-09-02 的實測結果。
+>
+> **上面三個事實，實測後兩對一錯：**
+>
+> | 原文的說法 | 實測（2026-09-02，macOS，隔離 HOME） |
+> |---|---|
+> | husky v9 安裝時必定設 repo 層級 `core.hooksPath`，會蓋掉全域設定 | **成立**。真的跑 `npx husky init` 後，`git config --get core.hooksPath` 回 `.husky/_`，全域值被蓋掉，該 repo 的 commit 不再經過 LeakBolt |
+> | pre-commit（Python）偵測到已設定時直接拒裝報錯 | **成立**。`pre-commit 4.5.1` 回 `[ERROR] Cowardly refusing to install hooks with core.hooksPath set.` 並且不安裝 |
+> | lefthook 偵測到已設定時直接拒裝報錯 | **不成立**。`lefthook 2.1.12` 不拒裝，它印警告並給三個選項，其中 `lefthook install --reset-hooks-path` 會直接刪掉全域設定。比拒裝更危險——使用者照著它的提示做，就會無聲關掉全機保護 |
+>
+> **處置：全域模式保留，但補上偵測與復原（不是靠文件提醒）**
+>
+> 1. `leakbolt doctor` 現在會抓到 repo-local 與 worktree 層級的遮蔽，指出是哪一層設的，並叫使用者跑 `leakbolt install`。
+> 2. `leakbolt install` 原本在全域模式下會把 LeakBolt 自己的路徑誤判成「別人佔用」而拒裝，
+>    使用者照 doctor 的指示做卻什麼都沒發生。已修正：現在會走 per-repo 偵測，把檢查寫進
+>    `.husky/pre-commit` 之類的位置，與該工具共存——也就是這條決策原本主張的做法。
+> 3. 共存之後 `doctor` 回報正常（先前會誤報異常，那種假警報會讓人學會忽略 doctor）。
+>
+> 換句話說：**全域是預設的入口（零設定，散播用），per-repo 共存是遇到衝突時的落地方式**，
+> 兩者都保留。這條決策指出的「裝一次全機器生效不成立」在裝了 husky 的 repo 上仍然為真，
+> 所以 README 不能無條件宣稱全機保護，必須寫出這個限制。
+>
+> **仍未解**：`lefthook install --reset-hooks-path` 會靜默解除全機保護，目前只有事後靠 `doctor`
+> 才發現得了。沒有辦法在 git 層攔截這件事。
+
 **平台：CLI 三平台首日支援，付費 GUI 先只做 macOS**（2026-08-29 決，取代原「未解」第 2 條，證據見 research/04）
 
 | | macOS | Windows |
