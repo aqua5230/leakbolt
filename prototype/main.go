@@ -128,13 +128,16 @@ func runInstall(args []string, stdout, stderr io.Writer) int {
 	}
 
 	fmt.Fprintln(stdout, "開始掃描完整 git 歷史…")
-	findings, err := scanHistory(repo, stderr)
+	findings, filtered, err := scanHistory(repo, stderr)
 	if err != nil {
 		return reportScanError(stderr, err)
 	}
-	printHistorySummary(stdout, findings)
+	printHistorySummary(stdout, findings, filtered)
+	// hook 已經裝好了，歷史掃描的結果是資訊而非安裝失敗。回非 0 會讓
+	// .pkg 的 postinstall 誤判成「自動開啟全域保護失敗」，也會中斷使用者
+	// 串接的安裝腳本。要單獨取得歷史掃描的 exit code 請用 leakbolt scan --history。
 	if len(findings) > 0 {
-		return 1
+		fmt.Fprintln(stdout, "hook 已安裝完成。上列為既有歷史中的命中，hook 只擋之後的 commit，這些要另外處理。")
 	}
 	return 0
 }
@@ -194,11 +197,11 @@ func runScanCommand(args []string, stdout, stderr io.Writer) int {
 		return finishStagedScan(repo, findings, stdout, stderr)
 	}
 
-	findings, err := scanHistory(repo, stderr)
+	findings, filtered, err := scanHistory(repo, stderr)
 	if err != nil {
 		return reportScanError(stderr, err)
 	}
-	printHistorySummary(stdout, findings)
+	printHistorySummary(stdout, findings, filtered)
 	if len(findings) > 0 {
 		return 1
 	}

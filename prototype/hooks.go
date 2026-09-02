@@ -352,14 +352,14 @@ func isFile(path string) bool {
 }
 
 // effectiveHookPath 回傳 git 實際會去執行的 pre-commit 路徑（尊重 core.hooksPath）。
+// 直接問 git 解析後的有效值，不自行按 scope 排序——worktree scope 也會蓋過 global，
+// 少查一層就會把「保護已失效」誤判成正常。
 func effectiveHookPath(repo string) string {
-	for _, scope := range []string{"local", "global", "system"} {
-		if value, set, err := gitConfig(repo, scope); err == nil && set {
-			if filepath.IsAbs(value) {
-				return filepath.Join(value, "pre-commit")
-			}
-			return filepath.Join(repo, value, "pre-commit")
+	if value, set, err := gitConfigEffective(repo); err == nil && set {
+		if filepath.IsAbs(value) {
+			return filepath.Join(value, "pre-commit")
 		}
+		return filepath.Join(repo, value, "pre-commit")
 	}
 	return filepath.Join(repo, ".git", "hooks", "pre-commit")
 }

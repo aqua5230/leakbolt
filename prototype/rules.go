@@ -16,7 +16,11 @@ import (
 var supplementaryRules []byte
 
 // writeSupplementaryRules 把內嵌規則寫到暫存檔，回傳路徑、清理函式與錯誤。
-// 寫失敗不算致命——退回 gitleaks 預設規則仍然掃得動，只是少了補充規則。
+//
+// 寫失敗即中止掃描，不退回 gitleaks 預設規則。原本的降級設計會讓只有補充規則
+// 抓得到的金鑰（Groq、Supabase secret、Clerk secret 等）在暫存檔寫不出來時整批
+// 放行，實測 TMPDIR 不可寫就會發生，且 commit 照樣成功——只有一行終端機警告。
+// 掃描範圍縮小卻回報「找到 0 筆」，比明講掃不動更危險。
 func writeSupplementaryRules() (string, func(), error) {
 	dir, err := os.MkdirTemp("", "leakbolt-rules-")
 	if err != nil {

@@ -42,7 +42,9 @@ brew install aqua5230/leakbolt/leakbolt
 
 安裝檔會做三件事：把 `leakbolt` 放進 `/usr/local/bin`、把 gitleaks 放進 `/usr/local/leakbolt/bin`、以目前登入的使用者身分執行 `leakbolt install --global` 開啟全機保護。
 
-安裝檔目前**未經 Apple 簽章與公證**，從瀏覽器下載後點兩下會被 Gatekeeper 擋。第一次請按右鍵選「打開」。簽章需要 Apple Developer Program 帳號；`scripts/build_pkg.sh` 已預留 `LEAKBOLT_SIGN_IDENTITY` 環境變數，設了才會簽。
+安裝檔目前**未經 Apple 簽章與公證**，從瀏覽器下載後點兩下會被 Gatekeeper 擋，且 macOS Sequoia（15）起已移除「按右鍵選打開」這條捷徑，只剩「系統設定」這條路：點兩下讓它被擋 → 開啟「系統設定 → 隱私權與安全性」→ 捲到「安全性」區塊 → 按被擋項目旁的「仍要打開」→ 在重新跳出的警告按「打開」並輸入管理者密碼。
+
+這幾步對不常開終端機的人相當勸退，所以**目前建議優先走 Homebrew**。簽章需要 Apple Developer Program 帳號（年費 US$99，公證不另外收費也不需要硬體金鑰）；`scripts/build_pkg.sh` 已預留 `LEAKBOLT_SIGN_IDENTITY` 環境變數，設了才會簽。
 
 解除安裝：`sudo sh /usr/local/leakbolt/uninstall.sh`。
 
@@ -51,10 +53,9 @@ brew install aqua5230/leakbolt/leakbolt
 需要 Go 1.21 或更新版本，執行 `cd prototype && go build -o leakbolt .`，然後將 `leakbolt` 放進 PATH。也可以到 [Releases 頁面](https://github.com/aqua5230/leakbolt/releases/latest) 直接下載對應平台的預編譯執行檔。
 
 ### macOS Gatekeeper 警告
-若執行檔或安裝檔是從瀏覽器下載或他人傳送，macOS 會因為缺乏 Apple 簽章而阻擋執行，顯示「Apple 無法驗證…是否為惡意軟體」。用 `curl` 下載則不會被貼隔離標記，不會出現此警告。解法三選一：
-- 按右鍵選「打開」
+若執行檔或安裝檔是從瀏覽器下載或他人傳送，macOS 會因為缺乏 Apple 簽章而阻擋執行，顯示「Apple 無法驗證…是否為惡意軟體」。用 `curl` 下載則不會被貼隔離標記，不會出現此警告。解法二選一：
+- 至「系統設定 → 隱私權與安全性」，捲到「安全性」區塊點擊「仍要打開」（macOS Sequoia 起這是唯一的圖形介面途徑，舊版的「按右鍵選打開」已被 Apple 移除）
 - 於終端機執行：`xattr -d com.apple.quarantine <檔案路徑>` 移除隔離標記
-- 至「系統設定 → 隱私權與安全性」點擊「仍要打開」
 
 自行用 `go build` 編譯的執行檔不會遇到此問題。
 
@@ -82,7 +83,7 @@ brew install aqua5230/leakbolt/leakbolt
 
 版本查詢指令：支援 `leakbolt --version`、`leakbolt -v`、`leakbolt version`，輸出格式如 `leakbolt 0.1.0 (3ba8f46)，鎖定 gitleaks 8.30.1`。
 
-- `install`：在目前 repo 裝上 pre-commit hook，並強制跑一次完整 git 歷史掃描把結果印出來。
+- `install`：在目前 repo 裝上 pre-commit hook，並強制跑一次完整 git 歷史掃描把結果印出來。歷史掃描找到東西時**不會**讓 `install` 回傳非 0——hook 已經裝好了，那些命中是資訊，不是安裝失敗。要取得歷史掃描本身的 exit code 請用 `leakbolt scan --history`。
 - `install --global`：設定 `core.hooksPath` 指向 `~/.leakbolt/hooks`，一次保護這台機器上所有 repo。全域 hook 會先執行該 repo 自己的 `.git/hooks/pre-commit`（若存在且可執行）並傳遞其 exit code，再跑 LeakBolt 檢查，不會靜默停掉既有 hook。若 global `core.hooksPath` 已被其他工具佔用，會拒絕安裝而不覆寫。
 - `uninstall --global`：解除全域保護。只在 global `core.hooksPath` 確實指向 LeakBolt 時才解除，指向他人設定則拒絕並保留原值。
 - `scan --staged`：掃暫存區（staged，指已 `git add` 但還沒 commit 的內容）。
@@ -113,7 +114,11 @@ macOS 上 commit 被擋時，除了既有的終端機輸出，會額外跳出原
 
 同時**刻意排除**設計上就該公開的金鑰以避免誤報：Clerk publishable、Stripe publishable、Supabase publishable 與 anon key。但排除規則不涵蓋「只寫 `NEXT_PUBLIC_`」的情況——把 service_role key 放進 `NEXT_PUBLIC_` 變數本身就是嚴重洩漏，照常抓取。
 
-偵測品質基準語料庫共 40 個樣本（19 個真陽性、21 個假陽性），目前漏報率 0%、誤報率 0%，可用 `sh scripts/quality_gate.sh` 重跑。
+偵測品質基準語料庫共 40 個樣本（19 個真陽性、21 個假陽性），**在這組基準上**漏報率 0%、誤報率 0%，可用 `sh scripts/quality_gate.sh` 重跑。這是基準測試集的數字，不是真實世界的保證——實際 repo 的誤報情形見下面「已知限制」第 6 條。
+
+**測試資產路徑濾除**：gitleaks 預設的 `generic-api-key`、`square-access-token`、`private-key` 這三條屬於高熵猜測型規則，在測試檔與測試資料夾裡命中率極高但幾乎都是雜訊。`scan --history` 會濾掉這三條規則落在測試路徑（`*_test.go`、`*.test.js`、`*.spec.ts`、`test_*`、`testdata/`、`fixtures/`、`__tests__/`、`tests/`、`spec/` 等）的命中，並在摘要末尾回報濾掉幾筆；設定 `LEAKBOLT_NO_TEST_FILTER=1` 可看完整結果。
+
+濾除**只套用在歷史掃描**，`scan --staged`（真正擋下 commit 的那條路徑）維持完整靈敏度不濾。LeakBolt 自帶的補充規則也一律不濾——測試檔裡出現真的供應商金鑰仍然是洩漏。
 
 ## 平台狀態
 
@@ -121,13 +126,26 @@ macOS 上 commit 被擋時，除了既有的終端機輸出，會額外跳出原
 - **Linux**：相容矩陣 11/11 通過，但**沒有預編譯檔**，要自己編。無視窗提示。
 - **Windows**：真實 Windows + Git Bash 上 `go test ./...` 全數通過（7 個 POSIX-only 測試依設計 SKIP），並已驗證 install、scan、密鑰攔截基本流程與 `install --global` hook 串接。完整 `scripts/windows_matrix.ps1` 相容矩陣及 husky/lefthook/pre-commit 整合情境尚未測試。
 
+## 掃描出錯時的行為
+
+掃描過程出錯一律**中止 commit**（fail-closed），不會因為「掃不動」就放行：
+
+- gitleaks 以非 0、非 1 的狀態離開（設定損毀、repo 讀不到、內部錯誤）——即使它同時輸出了合法的 JSON 報告，也視為掃描失敗，不當成「找到 0 筆」。
+- 補充規則暫存檔寫不出來（例如 `TMPDIR` 不可寫）——中止並提示，不會退回只用 gitleaks 預設規則掃。降級會讓只有補充規則抓得到的金鑰（Groq、Supabase secret、Clerk secret 等）整批通過，而畫面上仍寫著「找到 0 筆」。
+- 找不到 gitleaks、JSON 解析失敗、`state.json` 讀寫失敗——同樣中止。
+
+唯一會放行的例外是使用者明確要求的：`git config hooks.leakbolt false` 與 `git commit --no-verify`，兩者都會留下訊息。
+
 ## 已知限制
 
 1. **hook 擋不住所有路徑。** `git commit --no-verify`、不經 git 的部署、部分 GUI git 客戶端、hook 被其他工具改寫，都能繞過。請把它當**第一層**防護，不是保證。
+
+   特別注意 **repo 層級或 worktree 層級的 `core.hooksPath` 會蓋過全機保護**：`npx husky init` 就會設 repo 層級的值，那個 repo 從此不再經過 LeakBolt。`leakbolt doctor` 會指出是哪一層蓋掉的並給恢復指令，但它不會自動執行——換句話說，除非你主動跑 `doctor`，這個 repo 會安靜地失去防護。裝了 husky／lefthook／pre-commit 之後，建議在該 repo 執行一次 `leakbolt install` 讓兩者共存。
 2. **把金鑰搬進 `.env` 不等於修好。** 如果那個金鑰曾經進過 git 歷史，就算搬走也必須去供應商那邊作廢重發。另外某些前端框架會把特定前綴的環境變數編進瀏覽器 bundle。
 3. **規則會過期。** 鎖定 gitleaks 版本能給穩定基線，但新的供應商與新的 key 格式會繼續出現，不更新就會漏報。
-4. **大型 repo 的 commit 延遲還沒量過。**
+4. **`scan --history` 在大型 repo 上很慢。** 在 `golang/go` 的 4215 個 commit 上實測 53～56 秒（Apple Silicon）。`install` 會跑一次這個掃描，所以大型 repo 的安裝會等上將近一分鐘。相對地 `scan --staged`（每次 commit 實際跑的那個）實測 0.2～0.3 秒，日常 commit 感覺不到延遲。
 5. **誤報記錄只存規則 ID 與不可逆指紋**，不存原始命中內容。
+6. **真實 repo 仍會有誤報。** 實測 5 個公開專案的完整歷史：`gin-gonic/gin` 4 筆、`caddyserver/caddy` 5 筆、`golang/go` 257 筆，`expressjs/express`、`sharkdp/bat`、`junegunn/fzf` 各 0 筆——命中的全部是測試資產，真洩漏 0 筆。加入測試路徑濾除後，gin 降到 0 筆、golang/go 降到 23 筆（剩下的是密碼學實作檔裡的高熵常數，不在測試路徑上）。也就是說：誤報變少了，但沒有歸零，這類專案仍需搭配 `leakbolt allow` 使用。
 
 ## 授權
 

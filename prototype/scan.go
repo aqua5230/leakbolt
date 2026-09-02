@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"sort"
 	"strings"
@@ -36,8 +37,19 @@ func scanStaged(repo string, stderr io.Writer) ([]Finding, error) {
 	return runGitleaks(repo, stderr, "protect", "--staged", "--report-format", "json", "--report-path", "-")
 }
 
-func scanHistory(repo string, stderr io.Writer) ([]Finding, error) {
-	return runGitleaks(repo, stderr, "detect", "--report-format", "json", "--report-path", "-")
+// scanHistory 掃完整 git 歷史，並濾掉測試資產路徑上的高噪音命中，回傳濾除筆數。
+// 暫存區掃描（scanStaged）刻意不濾：那是真正擋下 commit 的路徑，維持完整靈敏度，
+// 誤報改用 leakbolt allow 標記。
+func scanHistory(repo string, stderr io.Writer) ([]Finding, int, error) {
+	findings, err := runGitleaks(repo, stderr, "detect", "--report-format", "json", "--report-path", "-")
+	if err != nil {
+		return nil, 0, err
+	}
+	if os.Getenv("LEAKBOLT_NO_TEST_FILTER") != "" {
+		return findings, 0, nil
+	}
+	kept, filtered := filterTestAssetFindings(findings)
+	return kept, filtered, nil
 }
 
 func runGitleaks(repo string, stderr io.Writer, args ...string) ([]Finding, error) {
@@ -51,12 +63,14 @@ func runGitleaks(repo string, stderr io.Writer, args ...string) ([]Finding, erro
 		fmt.Fprintf(stderr, "警告：gitleaks 版本為 %s，LeakBolt 鎖定的是 %s。偵測結果可能與品質基準不同。\n", version, requiredGitleaksVersion)
 	}
 
-	if configPath, cleanup, rulesErr := writeSupplementaryRules(); rulesErr == nil {
-		defer cleanup()
-		args = append([]string{args[0], "--config", configPath}, args[1:]...)
-	} else {
-		fmt.Fprintf(stderr, "警告：無法寫入補充規則暫存檔（%v），這次掃描只用 gitleaks 預設規則，未涵蓋 LeakBolt 自帶規則。\n", rulesErr)
+	// 補充規則載入不了就中止，不降級成只用預設規則掃：那樣會讓只有補充規則
+	// 抓得到的金鑰整批放行，而輸出卻是「找到 0 筆」。
+	configPath, cleanup, rulesErr := writeSupplementaryRules()
+	if rulesErr != nil {
+		return nil, fmt.Errorf("無法載入 LeakBolt 補充規則（%v）；掃描中止，未降級成只用預設規則。設定可寫入的 TMPDIR 後重試", rulesErr)
 	}
+	defer cleanup()
+	args = append([]string{args[0], "--config", configPath}, args[1:]...)
 
 	cmd := exec.Command(path, args...)
 	cmd.Dir = repo
@@ -75,10 +89,24 @@ func runGitleaks(repo string, stderr io.Writer, args ...string) ([]Finding, erro
 		return nil, fmt.Errorf("gitleaks 執行失敗：%s", message)
 	}
 	findings, parseErr := parseFindings(stdout.Bytes())
-	if parseErr == nil {
-		return findings, nil
+	if parseErr != nil {
+		return nil, parseErr
 	}
-	return nil, parseErr
+
+	// gitleaks 的約定：0 表示乾淨，1 表示有命中。其他退出碼是掃描本身出錯
+	// （設定壞掉、repo 讀不到、內部錯誤），這時就算 stdout 是合法 JSON 也不能
+	// 當成掃描結果——實測 exit 2 配上 "[]" 會被讀成「找到 0 筆」而放行 commit。
+	if runErr != nil {
+		exitErr, ok := runErr.(*exec.ExitError)
+		if !ok || exitErr.ExitCode() != 1 {
+			message := strings.TrimSpace(commandStderr.String())
+			if message == "" {
+				message = runErr.Error()
+			}
+			return nil, fmt.Errorf("gitleaks 執行失敗：%s", message)
+		}
+	}
+	return findings, nil
 }
 
 func gitleaksPathAndVersion() (string, string, error) {
@@ -165,8 +193,11 @@ func printStagedSummary(w io.Writer, findings []stagedFinding, total int) {
 	fmt.Fprintln(w, "commit 已中止。確認是誤報可執行 leakbolt allow <指紋前綴>。")
 }
 
-func printHistorySummary(w io.Writer, findings []Finding) {
+func printHistorySummary(w io.Writer, findings []Finding, filtered int) {
 	fmt.Fprintf(w, "歷史掃描完成：找到 %d 筆。\n", len(findings))
+	if filtered > 0 {
+		fmt.Fprintf(w, "（另有 %d 筆落在測試資產路徑，已濾除；要看完整結果請設定 LEAKBOLT_NO_TEST_FILTER=1）\n", filtered)
+	}
 	if len(findings) == 0 {
 		return
 	}

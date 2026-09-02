@@ -184,11 +184,28 @@ func runGlobalDoctor(repo, globalDir string, stdout io.Writer) int {
 	fmt.Fprintln(stdout, "core.hooksPath (global)：正常")
 	ok := true
 	hookPath := filepath.Join(globalDir, "pre-commit")
+
+	// global 值正確不代表它生效：repo-local 與 worktree 層級的 core.hooksPath
+	// 都會蓋過 global，讓這個 repo 靜默失去保護（husky init 就會這樣做）。
+	// 必須比對 git 解析出來的有效值，且要指出是誰蓋掉的。
+	for _, scope := range []string{"local", "worktree"} {
+		value, set, err := gitConfig(repo, scope)
+		if err != nil || !set {
+			continue
+		}
+		if !sameHooksPath(filepath.Join(value, "pre-commit"), hookPath) &&
+			!sameHooksPath(filepath.Join(repo, value, "pre-commit"), hookPath) {
+			fmt.Fprintf(stdout, "core.hooksPath (%s)：異常（設為 %q，蓋過全域保護，這個 repo 的 commit 不會被檢查）\n", scope, value)
+			fmt.Fprintf(stdout, "  這通常是 husky 之類的工具設的。要恢復保護：git config --unset --%s core.hooksPath，或改用 leakbolt install 讓 LeakBolt 與該工具共存。\n", scope)
+			ok = false
+		}
+	}
+
 	effectivePath, reachable := verifyHookReachable(repo)
 	if reachable && sameHooksPath(effectivePath, hookPath) {
 		fmt.Fprintln(stdout, "hook 可達性：正常")
 	} else {
-		fmt.Fprintln(stdout, "hook 可達性：異常（git 找不到全域的可執行 pre-commit）")
+		fmt.Fprintf(stdout, "hook 可達性：異常（git 實際會執行的是 %s，不是全域的 LeakBolt hook）\n", effectivePath)
 		ok = false
 	}
 	data, err := os.ReadFile(hookPath)

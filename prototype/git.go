@@ -18,6 +18,25 @@ func gitRepositoryRoot(dir string) (string, error) {
 	return strings.TrimSpace(string(output)), nil
 }
 
+// gitConfigEffective 問 git 自己解析出來的 core.hooksPath，不指定 scope。
+// 不自行按 scope 排序的理由：worktree scope（.git/config.worktree，需
+// extensions.worktreeConfig）也會蓋過 global，漏查任何一層都會讓
+// verifyHookReachable 誤判成「保護正常」。交給 git 決定優先順序才不會漏。
+func gitConfigEffective(repo string) (string, bool, error) {
+	cmd := exec.Command("git", "config", "--get", "core.hooksPath")
+	cmd.Dir = repo
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	output, err := cmd.Output()
+	if err == nil {
+		return strings.TrimSpace(string(output)), true, nil
+	}
+	if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
+		return "", false, nil
+	}
+	return "", false, fmt.Errorf("讀取 git config core.hooksPath 失敗：%s", strings.TrimSpace(stderr.String()))
+}
+
 func gitConfig(repo, scope string) (string, bool, error) {
 	cmd := exec.Command("git", "config", "--"+scope, "--get", "core.hooksPath")
 	cmd.Dir = repo
