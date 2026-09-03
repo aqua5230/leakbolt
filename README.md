@@ -79,6 +79,7 @@ brew install aqua5230/leakbolt/leakbolt
   leakbolt scan --staged
   leakbolt scan --history
   leakbolt allow <指紋前綴>
+  leakbolt guide <指紋前綴>
   leakbolt purge-backups
   leakbolt untrack <檔案路徑>
   leakbolt doctor
@@ -92,6 +93,7 @@ brew install aqua5230/leakbolt/leakbolt
 - `scan --staged`：掃暫存區（staged，指已 `git add` 但還沒 commit 的內容）。
 - `scan --history`：掃完整 git 歷史。
 - `allow <指紋前綴>`：把某一筆標成誤報並記住，之後不再擋。指紋前綴至少 8 個字元。
+- `guide <指紋前綴>`：認出是哪個供應商的金鑰（目前涵蓋 OpenAI、Anthropic、AWS、Stripe、Groq、Replicate、OpenRouter、xAI、Fireworks、DeepSeek、Supabase、Clerk），印出撤銷頁面與支出上限設定的連結；你確認後才會開瀏覽器，按 Enter 後才會複掃驗證。**引導式，不會自動撤銷金鑰**——LeakBolt 沒有你的供應商帳號權限，也做不到。複掃只能看出「這個字串還在不在暫存區」，看不出金鑰本身是否真的已被撤銷，那一步永遠要你自己去供應商網站確認。目前只認得 `scan --staged` 留下的指紋，`scan --history` 的命中還沒接上這個指令。
 - `untrack <檔案路徑>`：把誤被 git 追蹤的憑證檔移出版控。
 - `doctor`：健康檢查，看 hook 是不是還有效，並回報目前是全域模式或單一 repo 模式。
 - `purge-backups`：清掉明文備份。

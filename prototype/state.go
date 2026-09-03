@@ -181,6 +181,35 @@ func hasAllowedFingerprint(state *State, value string) bool {
 	return false
 }
 
+// lookupRecentFingerprint 找出最近一次 staged 掃描裡符合前綴的命中，唯讀，
+// 不寫入 allowlist——給 guide 這類只需要「這是哪個規則」而不需要標記誤報的指令用。
+func lookupRecentFingerprint(repo, prefix string) (RecentFinding, error) {
+	prefix = strings.ToLower(prefix)
+	if len(prefix) < 8 {
+		return RecentFinding{}, fmt.Errorf("指紋前綴至少需要 8 個字元")
+	}
+	state, err := loadState(repo)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return RecentFinding{}, fmt.Errorf("尚無最近一次 staged 掃描；請先執行 leakbolt scan --staged")
+		}
+		return RecentFinding{}, err
+	}
+	var matches []RecentFinding
+	for _, recent := range state.Recent {
+		if strings.HasPrefix(recent.Fingerprint, prefix) {
+			matches = append(matches, recent)
+		}
+	}
+	if len(matches) == 0 {
+		return RecentFinding{}, fmt.Errorf("最近一次 staged 掃描找不到這個指紋前綴")
+	}
+	if len(matches) > 1 {
+		return RecentFinding{}, fmt.Errorf("指紋前綴比對到 %d 筆；請提供更長的前綴", len(matches))
+	}
+	return matches[0], nil
+}
+
 func allowRecentFingerprint(repo, prefix string) (AllowEntry, bool, error) {
 	prefix = strings.ToLower(prefix)
 	if len(prefix) < 8 {

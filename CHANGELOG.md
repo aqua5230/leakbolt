@@ -6,6 +6,10 @@
 
 ## [未發布]
 
+### 新增
+
+- **`leakbolt guide <指紋前綴>`：引導式止血。** 認出金鑰屬於哪個供應商（OpenAI、Anthropic、AWS、Stripe、Groq、Replicate、OpenRouter、xAI、Fireworks、DeepSeek、Supabase、Clerk），印出撤銷頁面與支出上限設定連結；確認後才開瀏覽器，按 Enter 後才複掃驗證。只引導，不自動撤銷金鑰、不代設支出上限——LeakBolt 沒有也不會去要求你的供應商帳號權限。複掃只能確認「這個字串還在不在暫存區」，金鑰本身是否已撤銷仍要你自己到供應商網站確認。目前只涵蓋 `scan --staged` 留下的指紋。
+
 ### 修正
 
 - **掃描出錯時不再放行 commit。** 兩條路徑會讓掃描失敗被當成「找到 0 筆」：

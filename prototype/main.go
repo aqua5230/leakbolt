@@ -32,6 +32,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runScanCommand(args[1:], stdout, stderr)
 	case "allow":
 		return runAllow(args[1:], stdout, stderr)
+	case "guide":
+		return runGuideCommand(args[1:], stdout, stderr)
 	case "untrack":
 		return runUntrackCommand(args[1:], stdout, stderr)
 	case "doctor":
@@ -52,6 +54,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  leakbolt scan --staged")
 	fmt.Fprintln(w, "  leakbolt scan --history")
 	fmt.Fprintln(w, "  leakbolt allow <指紋前綴>")
+	fmt.Fprintln(w, "  leakbolt guide <指紋前綴>")
 	fmt.Fprintln(w, "  leakbolt purge-backups")
 	fmt.Fprintln(w, "  leakbolt untrack <檔案路徑>")
 	fmt.Fprintln(w, "  leakbolt doctor")
