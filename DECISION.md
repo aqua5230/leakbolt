@@ -58,6 +58,46 @@
 **技術基座：gitleaks（鎖版本 + 自帶補充規則）**
 MIT 授權可自由封裝與分叉；官方功能凍結反而給我們一個穩定不會亂動的基線。betterleaks 太新，授權、介面穩定性、誤報改善都還沒有證據，先不押。自己寫規則引擎會把公司變成規則維護公司，不做。
 
+> **betterleaks 複測（2026-09-03 補記，非子代理自述，本機實測）**
+>
+> 上面「太新、三項都沒證據」這句話，2026-09-03 已經有兩項不成立：betterleaks 現在 7 個月大、
+> v1.8.1、MIT 授權、六平台官方 binary，作者是 gitleaks 原作者、Aikido 出資維護——授權與介面
+> 穩定性這兩項不再是問題。剩下「誤報改善」實測如下：
+>
+> **相容性（正面）**：`prototype/rules/leakbolt.toml` 不改一個字直接被 betterleaks 讀取並生效；
+> JSON 輸出欄位（`RuleID`/`File`/`Secret`/`Commit`）與 gitleaks 完全一致；exit code 同樣是
+> 0＝乾淨、1＝有命中的約定。也就是說如果沒有下面那個問題，換引擎在程式面幾乎零成本。
+>
+> **判定性差異（負面，足以擋下這次切換）**：拿 `prototype/corpus`（19 個真陽性、22 個假陽性檔案）
+> 同一份補充規則各跑一次——
+>
+> | | 真陽性抓到 | 假陽性誤報 |
+> |---|---|---|
+> | gitleaks | 19/19 | 0/22 |
+> | betterleaks | 9/19 | 0/22 |
+>
+> 漏掉的 10 筆裡 9 筆同一個原因：betterleaks 的 `aws-access-token` 規則被改成複合規則
+> （`components = [{ id = "aws-secret-access-key", within = "5L" }]`），**同一檔案 5 行內沒有配對
+> 的 secret key，單獨一個 access key 就不會被回報**；配對用的 `aws-secret-access-key` 規則本身
+> 還標了 `skipReport = true`，代表落單的 secret key 也永遠不會單獨被報出來。這正是這次語料庫裡
+> 最常見的形狀（`Dockerfile`、`.env`、`deploy.sh`、`config.yaml`、`main.go`、`service.json`、
+> `variables.tf` 都是單獨一行 `AWS_ACCESS_KEY_ID=...`），也正是 DECISION.md 第二節 X 證據裡
+> vibe coder 最常見的洩漏形狀——單一 key 忘記拔掉，不是一對憑證一起外洩。用隨機高熵字元重測
+> （排除語料庫本身用重複字元造假金鑰導致熵值不足的干擾）結果一樣：單獨的 access key 不觸發，
+> 補上配對的 secret key 才觸發。這是 betterleaks 為了壓低泛用規則誤報率刻意做的設計取捨
+> （官方部落格「Better generic secrets detection」談的就是這條路線），不是 bug，但對這個產品
+> 而不能接受——「確定性攔截」是產品的骨，換引擎後單獨外洩的 AWS key 會靜默放行。
+>
+> **處置**：這次不換引擎。維持 gitleaks 鎖版。若之後要重新評估，路徑是「自訂規則覆寫掉
+> betterleaks 內建的 `aws-access-token`／`aws-secret-access-key`，換回不要求配對的單條規則」，
+> 而不是整套採用其預設規則集；這也代表換引擎不會是零維護成本的事，需要重新評估
+> 「自己寫規則引擎會把公司變成規則維護公司」這條紅線是否被踩到。
+>
+> 附帶發現、與引擎選擇無關：語料庫 `truepositive/openrouter.ts` 的假金鑰只有 62 個十六進位字元，
+> 我們自己的 `leakbolt-openrouter-key` 規則要求剛好 64 個，兩邊引擎都靠 gitleaks/betterleaks 各自
+> 的泛用規則救回才沒有整組漏測——這是語料庫或規則其中一邊的既有小 bug，與這次的引擎評估無關，
+> 留待下次動規則檔時一併修。
+
 **商業模式：核心免費開源 + 桌面版一次買斷 US$39**
 CLI 與 git hook 免費開源（拿散播與信任）；macOS 桌面版買斷 $39，賣的是零設定安裝、互動式修復、誤報記憶。純本地工具沒有持續性成本，收月費在心理上站不住，而且會輸給免費方案。
 
