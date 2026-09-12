@@ -150,7 +150,12 @@ func runDoctor(repo string, stdout io.Writer) int {
 	}
 
 	if path, pathErr := exec.LookPath("leakbolt"); pathErr == nil {
-		fmt.Fprintf(stdout, "leakbolt 執行檔：正常（%s）\n", path)
+		if installed, probeErr := installedLeakboltVersion(path); probeErr != nil {
+			fmt.Fprintf(stdout, "leakbolt 執行檔：異常（%s 認不得 --version，是舊版；hook 呼叫的就是它，請重新安裝）\n", path)
+			ok = false
+		} else {
+			fmt.Fprintf(stdout, "leakbolt 執行檔：正常（%s｜%s）\n", path, installed)
+		}
 	} else {
 		fmt.Fprintln(stdout, "leakbolt 執行檔：異常（PATH 上找不到 leakbolt，hook 會擋下所有 commit）")
 		ok = false
@@ -275,7 +280,12 @@ func runGlobalDoctor(repo, globalDir string, stdout io.Writer) int {
 	}
 
 	if path, pathErr := exec.LookPath("leakbolt"); pathErr == nil {
-		fmt.Fprintf(stdout, "leakbolt 執行檔：正常（%s）\n", path)
+		if installed, probeErr := installedLeakboltVersion(path); probeErr != nil {
+			fmt.Fprintf(stdout, "leakbolt 執行檔：異常（%s 認不得 --version，是舊版；hook 呼叫的就是它，請重新安裝）\n", path)
+			ok = false
+		} else {
+			fmt.Fprintf(stdout, "leakbolt 執行檔：正常（%s｜%s）\n", path, installed)
+		}
 	} else {
 		fmt.Fprintln(stdout, "leakbolt 執行檔：異常（PATH 上找不到 leakbolt，hook 會擋下所有 commit）")
 		ok = false
@@ -311,4 +321,22 @@ func hookGuardPresent(repo, expectedKind string) bool {
 	}
 	data, err := os.ReadFile(target.Path)
 	return err == nil && strings.Contains(string(data), "leakbolt scan --staged")
+}
+
+// hook 呼叫的是 PATH 上那支 leakbolt，不一定是正在跑 doctor 的這支。只回報
+// 「檔案在不在」會讓「原始碼改過但忘了重裝」看起來一切正常，所以改成問那支
+// 執行檔自己的版本。認不得 --version 的是補上版本識別以前的舊版，判異常。
+func installedLeakboltVersion(path string) (string, error) {
+	if self, err := os.Executable(); err == nil {
+		selfResolved, selfErr := filepath.EvalSymlinks(self)
+		pathResolved, pathErr := filepath.EvalSymlinks(path)
+		if selfErr == nil && pathErr == nil && selfResolved == pathResolved {
+			return versionString(), nil
+		}
+	}
+	out, err := exec.Command(path, "--version").Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
 }

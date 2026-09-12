@@ -8,3 +8,6 @@ dist/SHA256SUMS-pkg.txt
 
 # Go
 coverage.out
+
+# macOS Finder 產生的檔案
+.DS_Store
