@@ -5,6 +5,8 @@ dist/SHA256SUMS-darwin.txt
 dist/SHA256SUMS-windows.txt
 dist/*.pkg
 dist/SHA256SUMS-pkg.txt
+# build_pkg.sh 建置期間的日誌；沒忽略的話 Go 會把 .pkg 內的執行檔標成 -dirty
+dist/pkg-build.log
 
 # Go
 coverage.out
